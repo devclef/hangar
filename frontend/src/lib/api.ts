@@ -19,7 +19,6 @@ export interface Model {
 export interface Part {
   id: number;
   name: string;
-  part_type: string | null;
   quantity: number;
   notes: string | null;
   link: string | null;
@@ -43,7 +42,6 @@ export interface ModelInput {
 
 export interface PartInput {
   name: string;
-  part_type: string | null;
   quantity: number;
   notes: string | null;
   link: string | null;
@@ -64,7 +62,6 @@ export interface PartDetail {
 
 /** Optional part fields the user can toggle on the "Add part" form. */
 export type PartFormField =
-  | 'part_type'
   | 'quantity'
   | 'cost'
   | 'vendor'
@@ -80,7 +77,6 @@ export interface Settings {
 
 /** Labels for the toggleable part fields, in the order the form lays them out. */
 export const PART_FORM_FIELDS: Array<{ key: PartFormField; label: string; hint: string }> = [
-  { key: 'part_type', label: 'Type', hint: 'Component kind — rotor blade, ESC, radio…' },
   { key: 'quantity', label: 'Quantity on hand', hint: 'How many you currently have' },
   { key: 'cost', label: 'Cost', hint: 'What you paid, per unit' },
   { key: 'vendor', label: 'Vendor', hint: 'Where you got it from' },
@@ -162,10 +158,10 @@ export const api = {
 
   // Parts
   listParts(
-    params: { q?: string; part_type?: string; sort?: PartSortParam } = {},
+    params: { q?: string; sort?: PartSortParam } = {},
   ): Promise<Part[]> {
     return request(
-      `/parts${qs({ q: params.q, part_type: params.part_type, sort: params.sort })}`,
+      `/parts${qs({ q: params.q, sort: params.sort })}`,
     );
   },
   getPart(id: number): Promise<PartDetail> {

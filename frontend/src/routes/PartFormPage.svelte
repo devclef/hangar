@@ -19,7 +19,6 @@
   const editing = $derived(id !== undefined);
 
   let name = $state('');
-  let partType = $state('');
   let quantity = $state('1');
   let cost = $state('');
   let vendor = $state('');
@@ -60,7 +59,6 @@
         if (cancelled) return;
         const p = d.part;
         name = p.name;
-        partType = p.part_type ?? '';
         quantity = String(p.quantity);
         cost = p.cost === null ? '' : String(p.cost);
         vendor = p.vendor ?? '';
@@ -109,7 +107,6 @@
     busy = true;
     const input: PartInput = {
       name: name.trim(),
-      part_type: partType.trim() || null,
       quantity: qty,
       cost: costValue,
       vendor: vendor.trim() || null,
@@ -158,44 +155,18 @@
         <input id="p-name" class="input" bind:value={name} placeholder="Main rotor blade set" />
       </div>
 
-      {#if enabled.has('part_type') && enabled.has('quantity')}
-        <div class="grid grid-cols-2 gap-4">
-          <div>
-            <label class="label" for="p-type">Type</label>
-            <input id="p-type" class="input" bind:value={partType} placeholder="rotor blade, ESC, radio…" />
-          </div>
-          <div>
-            <label class="label" for="p-qty">Quantity on hand</label>
-            <input
-              id="p-qty"
-              class="input"
-              type="number"
-              min="0"
-              step="1"
-              bind:value={quantity}
-            />
-          </div>
+      {#if enabled.has('quantity')}
+        <div>
+          <label class="label" for="p-qty">Quantity on hand</label>
+          <input
+            id="p-qty"
+            class="input"
+            type="number"
+            min="0"
+            step="1"
+            bind:value={quantity}
+          />
         </div>
-      {:else}
-        {#if enabled.has('part_type')}
-          <div>
-            <label class="label" for="p-type">Type</label>
-            <input id="p-type" class="input" bind:value={partType} placeholder="rotor blade, ESC, radio…" />
-          </div>
-        {/if}
-        {#if enabled.has('quantity')}
-          <div>
-            <label class="label" for="p-qty">Quantity on hand</label>
-            <input
-              id="p-qty"
-              class="input"
-              type="number"
-              min="0"
-              step="1"
-              bind:value={quantity}
-            />
-          </div>
-        {/if}
       {/if}
 
       {#if enabled.has('cost') && enabled.has('vendor')}

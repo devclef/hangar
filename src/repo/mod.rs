@@ -31,7 +31,6 @@ pub trait HangarRepo: Send + Sync {
     async fn list_parts(
         &self,
         q: Option<&str>,
-        part_type: Option<&str>,
         sort: PartSort,
     ) -> Result<Vec<PartListRow>, DomainError>;
     async fn get_part(&self, id: i64) -> Result<Option<Part>, DomainError>;
@@ -56,7 +55,8 @@ pub trait HangarRepo: Send + Sync {
 
     // -- Settings -----------------------------------------------------------
 
-    /// Returns `None` when no settings have been stored yet.
+    /// Returns `None` when no settings have been stored yet, or when the
+    /// stored document no longer parses (e.g. it references a removed field).
     async fn get_settings(&self) -> Result<Option<Settings>, DomainError>;
     /// Upserts the full settings document.
     async fn save_settings(&self, settings: &Settings) -> Result<(), DomainError>;

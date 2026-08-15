@@ -111,7 +111,6 @@ impl HangarRepo for SqliteRepo {
     async fn list_parts(
         &self,
         q: Option<&str>,
-        part_type: Option<&str>,
         sort: PartSort,
     ) -> Result<Vec<PartListRow>, DomainError> {
         let sql = format!(
@@ -123,18 +122,14 @@ impl HangarRepo for SqliteRepo {
                    FROM parts p \
                    WHERE (?1 IS NULL \
                           OR p.name LIKE ?1 ESCAPE '\\' \
-                          OR p.part_type LIKE ?1 ESCAPE '\\' \
                           OR p.notes LIKE ?1 ESCAPE '\\' \
                           OR p.link LIKE ?1 ESCAPE '\\') \
-                     AND (?2 IS NULL OR p.part_type = ?2) \
                    ORDER BY {}",
             sort.order_by()
         );
         let pattern: Option<String> = q.map(like_pattern);
-        let typ: Option<String> = part_type.map(str::to_string);
         let rows = query_as::<_, PartListRow>(&sql)
             .bind(pattern)
-            .bind(typ)
             .fetch_all(&self.pool)
             .await?;
         Ok(rows)
@@ -150,11 +145,10 @@ impl HangarRepo for SqliteRepo {
 
     async fn create_part(&self, input: &PartInput) -> Result<Part, DomainError> {
         let row = query_as::<_, Part>(
-            "INSERT INTO parts (name, part_type, quantity, notes, link, photo_url, cost, vendor) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8) RETURNING *",
+            "INSERT INTO parts (name, quantity, notes, link, photo_url, cost, vendor) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7) RETURNING *",
         )
         .bind(&input.name)
-        .bind(&input.part_type)
         .bind(input.quantity as i32)
         .bind(&input.notes)
         .bind(&input.link)
@@ -168,13 +162,12 @@ impl HangarRepo for SqliteRepo {
 
     async fn update_part(&self, id: i64, input: &PartInput) -> Result<Option<Part>, DomainError> {
         let row = query_as::<_, Part>(
-            "UPDATE parts SET name = ?1, part_type = ?2, quantity = ?3, notes = ?4, link = ?5, \
-              photo_url = ?6, cost = ?7, vendor = ?8, \
+            "UPDATE parts SET name = ?1, quantity = ?2, notes = ?3, link = ?4, \
+              photo_url = ?5, cost = ?6, vendor = ?7, \
               updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') \
-             WHERE id = ?9 RETURNING *",
+             WHERE id = ?8 RETURNING *",
         )
         .bind(&input.name)
-        .bind(&input.part_type)
         .bind(input.quantity as i32)
         .bind(&input.notes)
         .bind(&input.link)
@@ -294,10 +287,17 @@ impl HangarRepo for SqliteRepo {
             .await?;
         match row {
             Some(json) => {
-                let settings = serde_json::from_str(&json).map_err(|e| {
-                    DomainError::Db(anyhow::anyhow!("corrupt settings document: {e}"))
-                })?;
-                Ok(Some(settings))
+                match serde_json::from_str::<Settings>(&json) {
+                    Ok(settings) => Ok(Some(settings)),
+                    // A stored document that no longer parses (e.g. it still
+                    // references a removed field like "part_type") is treated
+                    // as "no settings": the service returns the defaults and
+                    // the next PUT heals the row.
+                    Err(e) => {
+                        tracing::warn!(error = %e, "ignoring unparseable stored settings");
+                        Ok(None)
+                    }
+                }
             }
             None => Ok(None),
         }

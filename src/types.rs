@@ -124,7 +124,6 @@ sqlx_enum!(ModelStatus);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PartFormField {
-    PartType,
     Quantity,
     Cost,
     Vendor,
@@ -135,8 +134,7 @@ pub enum PartFormField {
 
 impl PartFormField {
     /// Every optional part field, in the order the form lays them out.
-    pub const ALL: [PartFormField; 7] = [
-        PartFormField::PartType,
+    pub const ALL: [PartFormField; 6] = [
         PartFormField::Quantity,
         PartFormField::Cost,
         PartFormField::Vendor,
@@ -166,7 +164,6 @@ pub struct Model {
 pub struct Part {
     pub id: i64,
     pub name: String,
-    pub part_type: Option<String>,
     pub quantity: i32,
     pub notes: Option<String>,
     pub link: Option<String>,
@@ -210,7 +207,6 @@ impl ModelListRow {
 pub struct PartListRow {
     pub id: i64,
     pub name: String,
-    pub part_type: Option<String>,
     pub quantity: i32,
     pub notes: Option<String>,
     pub link: Option<String>,
@@ -226,7 +222,6 @@ impl PartListRow {
         Part {
             id: self.id,
             name: self.name,
-            part_type: self.part_type,
             quantity: self.quantity,
             notes: self.notes,
             link: self.link,
@@ -350,8 +345,6 @@ impl ModelInput {
 #[derive(Debug, Deserialize)]
 pub struct PartInput {
     pub name: String,
-    #[serde(default)]
-    pub part_type: Option<String>,
     pub quantity: i64,
     #[serde(default)]
     pub notes: Option<String>,
@@ -379,7 +372,6 @@ impl PartInput {
             ));
         }
         self.name = name.to_string();
-        self.part_type = trim_opt(self.part_type);
         self.notes = trim_opt(self.notes);
         self.link = trim_opt(self.link);
         self.photo_url = trim_opt(self.photo_url);
@@ -431,7 +423,6 @@ pub struct ModelListFilter {
 #[derive(Debug, Deserialize)]
 pub struct PartListFilter {
     pub q: Option<String>,
-    pub part_type: Option<String>,
     #[serde(default)]
     pub sort: PartSort,
 }
@@ -587,7 +578,6 @@ mod tests {
         fn sample(quantity: i64) -> PartInput {
             PartInput {
                 name: "blades".into(),
-                part_type: None,
                 quantity,
                 notes: None,
                 link: None,
@@ -599,7 +589,6 @@ mod tests {
 
         let ok = PartInput {
             name: "blades".into(),
-            part_type: None,
             quantity: 0,
             notes: None,
             link: None,
@@ -622,7 +611,6 @@ mod tests {
         fn sample(cost: Option<f64>) -> PartInput {
             PartInput {
                 name: "blades".into(),
-                part_type: None,
                 quantity: 1,
                 notes: None,
                 link: None,

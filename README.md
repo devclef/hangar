@@ -91,8 +91,8 @@ All endpoints are under `/api` and use JSON. Errors have the shape
 
 | Method | Path                       | Description |
 | ------ | -------------------------- | ----------- |
-| GET    | `/api/parts`               | List parts. Query params: `q` (name/type/notes/link substring), `part_type` (exact), `sort` (`quantity_asc` default-friendly, `quantity_desc`, `name_asc`, `name_desc`, `recent`). Each row includes `model_count` and `model_names`. |
-| POST   | `/api/parts`               | Create a part. Body: `name`*, `quantity`* (≥ 0), `part_type?`, `notes?`, `link?` (URL or SKU), `photo_url?`, `cost?` (≥ 0, per unit in the configured currency), `vendor?`. Returns 201. |
+| GET    | `/api/parts`               | List parts. Query params: `q` (name/notes/link substring), `sort` (`quantity_asc` default-friendly, `quantity_desc`, `name_asc`, `name_desc`, `recent`). Each row includes `model_count` and `model_names`. |
+| POST   | `/api/parts`               | Create a part. Body: `name`*, `quantity`* (≥ 0), `notes?`, `link?` (URL or SKU), `photo_url?`, `cost?` (≥ 0, per unit in the configured currency), `vendor?`. Returns 201. |
 | GET    | `/api/parts/:id`           | Part detail: `{part, models[]}` — all compatible models. |
 | PUT    | `/api/parts/:id`           | Full replace update (same body as create). |
 | DELETE | `/api/parts/:id`           | Delete part (unlinked from all models). |
@@ -106,7 +106,7 @@ All endpoints are under `/api` and use JSON. Errors have the shape
 | Method | Path           | Description |
 | ------ | -------------- | ----------- |
 | GET    | `/api/settings`| Current settings. Returns `{"part_form_fields": [...], "currency": "USD"}` — the defaults (all fields, USD) when nothing is stored yet. |
-| PUT    | `/api/settings`| Full replace of the settings document (same shape as GET). `part_form_fields` is a list drawn from `part_type, quantity, cost, vendor, link, photo_url, notes` (duplicates collapsed, unknown values are a 400). `currency` is an ISO-4217 code, normalized to uppercase (3-8 alphanumeric characters). |
+| PUT    | `/api/settings`| Full replace of the settings document (same shape as GET). `part_form_fields` is a list drawn from `quantity, cost, vendor, link, photo_url, notes` (duplicates collapsed, unknown values are a 400). `currency` is an ISO-4217 code, normalized to uppercase (3-8 alphanumeric characters). |
 
 Example — the question this app exists for:
 
@@ -121,7 +121,7 @@ curl -s localhost:8080/api/models/1
 - `#/models` — list, search, category filter chips, linked-part counts.
 - `#/models/:id` — model detail: all linked parts with quantities (inline +/− stepper), link/unlink parts.
 - `#/models/new`, `#/models/:id/edit` — add/edit forms.
-- `#/parts` — all parts, searchable, type filter, sortable (defaults to quantity low→high so out-of-stock floats to the top; 0 shows an "out" badge, ≤2 a "low" badge).
+- `#/parts` — all parts, searchable, sortable (defaults to quantity low→high so out-of-stock floats to the top; 0 shows an "out" badge, ≤2 a "low" badge).
 - `#/parts/:id` — part detail: quantity stepper, compatible models, link/unlink models.
 - `#/parts/new`, `#/parts/:id/edit` — add/edit forms.
 - `#/settings` — pick which fields the part form shows (toggles, saved to the API) and the currency code used to display part costs.
@@ -131,13 +131,14 @@ curl -s localhost:8080/api/models/1
 Things the brief left open and how they were resolved:
 
 - **Photos:** the `photo_url` field exists on both models and parts (a URL or server-relative path) and renders on detail pages, but v1 has **no file-upload endpoint** — that keeps the API surface small. Drop files into a served directory (or point the field at any reachable URL) and it just works; an upload endpoint can be added later without schema changes.
-- **Category / part type:** model `category` is a fixed enum (`heli, plane, car, drone, boat, other`) so filtering is simple; `part_type` is free text (rotor blades, ESC, radios…) since part taxonomy is too personal to pre-bake.
-- **Part form fields:** the add/edit part form always shows the required name; every other field (type, quantity, cost, vendor, link/SKU, photo, notes) can be hidden from the form in `#/settings`. Hidden fields still exist on the record — edits just don't surface them — so nothing is ever wiped by hiding a field. The choice is stored server-side (`settings` table) and the part form reads it on load.
+- **Category:** model `category` is a fixed enum (`heli, plane, car, drone, boat, other`) so filtering is simple.
+- **Part type removed:** parts once had a free-text `part_type`, but with no controlled vocabulary it fragmented into inconsistent filter values and blurred into the name; it was dropped (migration `0004` removes the column and its stored values). Name + substring search covers the real use cases.
+- **Part form fields:** the add/edit part form always shows the required name; every other field (quantity, cost, vendor, link/SKU, photo, notes) can be hidden from the form in `#/settings`. Hidden fields still exist on the record — edits just don't surface them — so nothing is ever wiped by hiding a field. The choice is stored server-side (`settings` table) and the part form reads it on load.
 - **Cost & vendor:** `cost` is a nullable `REAL` (per-unit, in the user's configured currency; validated finite and ≥ 0) and `vendor` is a nullable free-text string. Costs render with `Intl.NumberFormat` using the `currency` setting (ISO-4217, default USD), falling back to a plain `$` formatting if the runtime doesn't support the code.
 - **Link/SKU:** one string field `link` on parts. If it looks like an http(s) URL the UI renders it as a link, otherwise as a monospace SKU.
 - **Update semantics:** `PUT` is a full replace of the record (the forms always submit everything), which avoids sparse-patch edge cases in a single-user tool. Quantity changes also have the atomic `POST .../quantity {delta}` endpoint, clamped at 0 server-side.
 - **Association endpoints:** both sides of the M:N are manageable (`/models/:id/parts` and `/parts/:id/models`); the model side also supports full-set replace. Duplicate links are idempotent no-ops.
-- **Sorting/searching:** case-insensitive substring search over the obvious text fields (name/manufacturer/notes for models, name/type/notes/link for parts); `LIKE` wildcards in user input are escaped.
+- **Sorting/searching:** case-insensitive substring search over the obvious text fields (name/manufacturer/notes for models, name/notes/link for parts); `LIKE` wildcards in user input are escaped.
 - **Dates:** `date_acquired` is stored as an ISO-8601 date string, validated calendar-correctly (leap years included).
 - **Static serving:** the backend serves the built SPA itself (hashed assets cached immutably, `index.html` no-cache) and returns JSON 404s for unknown `/api/*` paths. The SPA uses hash routing, so no server-side route fallback is needed.
 - **Single process, no auth:** per the brief — one user, trusted network. SQLite pool is single-connection (WAL) which fits that profile and avoids `SQLITE_BUSY` entirely.

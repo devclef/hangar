@@ -69,7 +69,6 @@ fn model_json(name: &str, category: &str) -> serde_json::Value {
 fn part_json(name: &str, quantity: i64) -> serde_json::Value {
     serde_json::json!({
         "name": name,
-        "part_type": "spare",
         "quantity": quantity,
         "notes": "test part",
         "link": "https://example.com/sku-1"
@@ -410,22 +409,17 @@ async fn part_list_search_and_sort() {
     let res = call(app.clone(), Method::GET, "/api/parts?sort=bogus", None).await;
     assert_eq!(res.status, StatusCode::BAD_REQUEST);
 
-    // search by name and type
+    // search by name
     let res = call(app.clone(), Method::GET, "/api/parts?q=blade", None).await;
     assert_eq!(res.body.as_array().unwrap().len(), 2);
-    let res = call(
-        app.clone(),
-        Method::GET,
-        "/api/parts?part_type=spare&q=esc",
-        None,
-    )
-    .await;
-    let list = res.body.as_array().unwrap();
-    assert_eq!(list.len(), 1);
-    assert_eq!(list[0]["name"], "ESC 60A");
 
-    // unknown sort param for models filter is fine; part_type filter alone
-    let res = call(app, Method::GET, "/api/parts?part_type=nosuchtype", None).await;
+    // search reaches the link field too
+    let res = call(app.clone(), Method::GET, "/api/parts?q=sku-1", None).await;
+    let list = res.body.as_array().unwrap();
+    assert_eq!(list.len(), 4);
+
+    // a search matching nothing comes back empty
+    let res = call(app, Method::GET, "/api/parts?q=nosuchpart", None).await;
     assert!(res.body.as_array().unwrap().is_empty());
 
     // ids used above keep lints quiet
@@ -774,15 +768,7 @@ async fn settings_default_and_update() {
         .collect();
     assert_eq!(
         fields,
-        vec![
-            "part_type",
-            "quantity",
-            "cost",
-            "vendor",
-            "link",
-            "photo_url",
-            "notes"
-        ]
+        vec!["quantity", "cost", "vendor", "link", "photo_url", "notes"]
     );
     assert_eq!(res.body["currency"], "USD");
 
@@ -792,7 +778,7 @@ async fn settings_default_and_update() {
         Method::PUT,
         "/api/settings",
         Some(serde_json::json!({
-            "part_form_fields": ["part_type", "quantity", "cost", "cost"],
+            "part_form_fields": ["quantity", "cost", "cost"],
             "currency": "  eur "
         })),
     )
@@ -805,13 +791,13 @@ async fn settings_default_and_update() {
         .iter()
         .map(|v| v.as_str().unwrap())
         .collect();
-    assert_eq!(fields, vec!["part_type", "quantity", "cost"]);
+    assert_eq!(fields, vec!["quantity", "cost"]);
 
     // the update is persisted
     let res = call(app, Method::GET, "/api/settings", None).await;
     assert_eq!(res.status, StatusCode::OK);
     assert_eq!(res.body["currency"], "EUR");
-    assert_eq!(res.body["part_form_fields"].as_array().unwrap().len(), 3);
+    assert_eq!(res.body["part_form_fields"].as_array().unwrap().len(), 2);
 }
 
 #[tokio::test]
@@ -824,7 +810,7 @@ async fn settings_validation_errors() {
         Method::PUT,
         "/api/settings",
         Some(serde_json::json!({
-            "part_form_fields": ["part_type", "bogus_field"],
+            "part_form_fields": ["quantity", "bogus_field"],
             "currency": "USD"
         })),
     )

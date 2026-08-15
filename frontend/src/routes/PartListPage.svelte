@@ -23,7 +23,6 @@
   let loading = $state(true);
   let error = $state<string | null>(null);
   let q = $state('');
-  let partType = $state('');
   let sort = $state<PartSortParam>('quantity_asc');
   let currency = $state('USD');
 
@@ -32,7 +31,6 @@
     try {
       parts = await api.listParts({
         q: q.trim() || undefined,
-        part_type: partType || undefined,
         sort,
       });
       // Best-effort: settings only affect how the cost is displayed.
@@ -49,7 +47,6 @@
 
   $effect(() => {
     void q;
-    void partType;
     void sort;
     const t = setTimeout(() => void load(), 200);
     return () => clearTimeout(t);
@@ -75,8 +72,6 @@
     }
   }
 
-  const types = $derived([...new Set(parts.map((p) => p.part_type).filter(Boolean))] as string[]);
-
   const modelNames = (p: Part): string =>
     p.model_names ? p.model_names.split('|').join(', ') : '';
 </script>
@@ -89,17 +84,6 @@
     value={q}
     oninput={(e) => (q = e.currentTarget.value)}
   />
-  <select
-    class="input w-44"
-    value={partType}
-    onchange={(e) => (partType = e.currentTarget.value)}
-    aria-label="Filter by type"
-  >
-    <option value="">All types</option>
-    {#each types as t (t)}
-      <option value={t}>{t}</option>
-    {/each}
-  </select>
   <select
     class="input w-48"
     value={sort}
@@ -135,7 +119,6 @@
         <thead class="border-b border-stone-200 bg-stone-50">
           <tr>
             <th class="th">Part</th>
-            <th class="th">Type</th>
             <th class="th">Vendor</th>
             <th class="th">Cost</th>
             <th class="th">Qty</th>
@@ -153,7 +136,6 @@
                   <div class="max-w-56 truncate text-xs text-stone-400" title={p.notes}>{p.notes}</div>
                 {/if}
               </td>
-              <td class="td text-stone-600">{p.part_type ?? '—'}</td>
               <td class="td max-w-40 text-stone-600">
                 {#if p.vendor}
                   <span class="block truncate" title={p.vendor}>{p.vendor}</span>

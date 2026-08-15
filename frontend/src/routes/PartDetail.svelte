@@ -134,11 +134,6 @@
   <div class="card p-5">
     <div class="flex flex-wrap items-center gap-3">
       <h1 class="text-2xl font-bold text-zinc-900">{detail.part.name}</h1>
-      {#if detail.part.part_type}
-        <span class="rounded bg-stone-200 px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-stone-600">
-          {detail.part.part_type}
-        </span>
-      {/if}
     </div>
     <div class="mt-4 flex flex-wrap items-center gap-x-8 gap-y-3 text-sm">
       <div>

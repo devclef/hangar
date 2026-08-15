@@ -176,7 +176,7 @@
       >
         <option value="" disabled>Link a part…</option>
         {#each unlinkedParts as p (p.id)}
-          <option value={p.id}>{p.name}{p.part_type ? ` (${p.part_type})` : ''} — {p.quantity} in stock</option>
+          <option value={p.id}>{p.name} — {p.quantity} in stock</option>
         {/each}
       </select>
       <button type="button" class="btn-primary" disabled={busy || linkSelection === ''} onclick={addLink}>
@@ -195,7 +195,6 @@
           <thead class="border-b border-stone-100 bg-stone-50">
             <tr>
               <th class="th">Part</th>
-              <th class="th">Type</th>
               <th class="th">Qty</th>
               <th class="th">Notes</th>
               <th class="th w-12"></th>
@@ -207,7 +206,6 @@
                 <td class="td">
                   <a class="font-medium text-zinc-900 hover:underline" href="#/parts/{p.id}">{p.name}</a>
                 </td>
-                <td class="td text-stone-600">{p.part_type ?? '—'}</td>
                 <td class="td">
                   <QuantityStepper qty={p.quantity} onAdjust={(d) => adjustQty(p, d)} />
                 </td>

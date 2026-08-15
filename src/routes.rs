@@ -214,11 +214,7 @@ async fn list_parts(
     let filter = parse_query(filter)?;
     Ok(Json(
         st.service
-            .list_parts(
-                filter.q.as_deref(),
-                filter.part_type.as_deref(),
-                filter.sort,
-            )
+            .list_parts(filter.q.as_deref(), filter.sort)
             .await?,
     ))
 }

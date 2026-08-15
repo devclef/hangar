@@ -32,7 +32,6 @@ pub trait ServiceApi: Send + Sync {
     async fn list_parts(
         &self,
         q: Option<&str>,
-        part_type: Option<&str>,
         sort: PartSort,
     ) -> Result<Vec<PartListRow>, DomainError>;
     async fn get_part_detail(&self, id: i64) -> Result<PartDetail, DomainError>;
@@ -131,10 +130,9 @@ impl ServiceApi for Service {
     async fn list_parts(
         &self,
         q: Option<&str>,
-        part_type: Option<&str>,
         sort: PartSort,
     ) -> Result<Vec<PartListRow>, DomainError> {
-        self.repo.list_parts(q, part_type, sort).await
+        self.repo.list_parts(q, sort).await
     }
 
     async fn get_part_detail(&self, id: i64) -> Result<PartDetail, DomainError> {

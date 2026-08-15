@@ -1,0 +1,18 @@
+services:
+  hangar:
+    build: .
+    image: hangar:0.1.0
+    container_name: hangar
+    ports:
+      - "8080:8080"
+    environment:
+      PORT: "8080"
+      DATA_DIR: /data
+      STATIC_DIR: /app/static
+      RUST_LOG: info
+    volumes:
+      - hangar-data:/data
+    restart: unless-stopped
+
+volumes:
+  hangar-data:

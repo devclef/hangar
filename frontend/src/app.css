@@ -1,0 +1,47 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue",
+    Arial, sans-serif;
+}
+
+html {
+  font-family: var(--font-sans);
+}
+
+@layer components {
+  .btn-primary {
+    @apply inline-flex items-center gap-1.5 rounded-md bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-zinc-700 disabled:pointer-events-none disabled:opacity-50;
+  }
+  .btn-ghost {
+    @apply inline-flex items-center gap-1.5 rounded-md border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-700 transition-colors hover:bg-stone-100 disabled:pointer-events-none disabled:opacity-50;
+  }
+  .btn-danger {
+    @apply inline-flex items-center gap-1.5 rounded-md border border-rose-200 bg-white px-3 py-1.5 text-sm font-medium text-rose-600 transition-colors hover:bg-rose-50 disabled:pointer-events-none disabled:opacity-50;
+  }
+  .input {
+    @apply w-full rounded-md border border-stone-300 bg-white px-3 py-1.5 text-sm text-stone-900 placeholder:text-stone-400 focus:border-zinc-900 focus:outline-none focus:ring-1 focus:ring-zinc-900;
+  }
+  .label {
+    @apply mb-1 block text-xs font-semibold uppercase tracking-wide text-stone-500;
+  }
+  .card {
+    @apply rounded-lg border border-stone-200 bg-white shadow-sm;
+  }
+  .th {
+    @apply px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-stone-500;
+  }
+  .td {
+    @apply px-4 py-2.5 align-middle text-sm text-stone-800;
+  }
+  .chip {
+    @apply rounded-full border border-stone-300 bg-white px-3 py-1 text-xs font-medium capitalize text-stone-600 transition-colors hover:border-stone-500;
+  }
+  .chip-active {
+    @apply border-zinc-900 bg-zinc-900 text-white hover:border-zinc-900;
+  }
+  .nav-link {
+    @apply rounded-md px-3 py-1.5 font-medium transition-colors;
+  }
+}

@@ -83,7 +83,7 @@ All endpoints are under `/api` and use JSON. Errors have the shape
 | Method | Path                              | Description |
 | ------ | --------------------------------- | ----------- |
 | GET    | `/api/models/:id/parts`           | Linked parts (with quantities). |
-| POST   | `/api/models/:id/parts`           | Link one part. Body: `{"part_id": 3}`. Idempotent (201). |
+| POST   | `/api/models/:id/parts`           | Link one part. Body: `{"part_id": 3}`. Idempotent (204). |
 | PUT    | `/api/models/:id/parts`           | Replace the full link set. Body: `{"part_ids": [3, 5]}`. 404 if any part id is unknown (set is left unchanged). |
 | DELETE | `/api/models/:id/parts/:part_id`  | Unlink one part. 404 if not linked. |
 
@@ -98,7 +98,7 @@ All endpoints are under `/api` and use JSON. Errors have the shape
 | DELETE | `/api/parts/:id`           | Delete part (unlinked from all models). |
 | POST   | `/api/parts/:id/quantity`   | Atomic relative change: `{"delta": -1}`. Clamps at 0, so you can never go negative. Returns the updated part. |
 | GET    | `/api/parts/:id/models`     | Models linked to this part. |
-| POST   | `/api/parts/:id/models`     | Link one model. Body: `{"model_id": 1}`. Idempotent (201). |
+| POST   | `/api/parts/:id/models`     | Link one model. Body: `{"model_id": 1}`. Idempotent (204). |
 | DELETE | `/api/parts/:id/models/:model_id` | Unlink one model. 404 if not linked. |
 
 Example — the question this app exists for:

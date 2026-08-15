@@ -477,7 +477,7 @@ async fn association_link_unlink_replace() {
         Some(serde_json::json!({"part_id": part1})),
     )
     .await;
-    assert_eq!(res.status, StatusCode::CREATED);
+    assert_eq!(res.status, StatusCode::NO_CONTENT);
 
     // duplicate link is an idempotent success
     let res = call(
@@ -487,7 +487,7 @@ async fn association_link_unlink_replace() {
         Some(serde_json::json!({"part_id": part1})),
     )
     .await;
-    assert_eq!(res.status, StatusCode::CREATED);
+    assert_eq!(res.status, StatusCode::NO_CONTENT);
 
     // link another; the model detail now shows both, in quantity
     let res = call(
@@ -497,7 +497,7 @@ async fn association_link_unlink_replace() {
         Some(serde_json::json!({"part_id": part2})),
     )
     .await;
-    assert_eq!(res.status, StatusCode::CREATED);
+    assert_eq!(res.status, StatusCode::NO_CONTENT);
 
     let res = call(
         app.clone(),
@@ -624,7 +624,7 @@ async fn part_reverse_links_and_cascade() {
         Some(serde_json::json!({"model_id": m1_id})),
     )
     .await;
-    assert_eq!(res.status, StatusCode::CREATED);
+    assert_eq!(res.status, StatusCode::NO_CONTENT);
     let res = call(
         app.clone(),
         Method::POST,
@@ -632,7 +632,7 @@ async fn part_reverse_links_and_cascade() {
         Some(serde_json::json!({"model_id": m2_id})),
     )
     .await;
-    assert_eq!(res.status, StatusCode::CREATED);
+    assert_eq!(res.status, StatusCode::NO_CONTENT);
 
     // part detail lists both models
     let res = call(

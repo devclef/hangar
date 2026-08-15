@@ -180,7 +180,7 @@ async fn link_part(
 ) -> Result<StatusCode, DomainError> {
     let body = parse_body(body)?;
     st.service.link_part(id, body.part_id).await?;
-    Ok(StatusCode::CREATED)
+    Ok(StatusCode::NO_CONTENT)
 }
 
 async fn unlink_part(
@@ -280,7 +280,7 @@ async fn link_model(
 ) -> Result<StatusCode, DomainError> {
     let body = parse_body(body)?;
     st.service.link_part(body.model_id, id).await?;
-    Ok(StatusCode::CREATED)
+    Ok(StatusCode::NO_CONTENT)
 }
 
 async fn unlink_model(

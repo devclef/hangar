@@ -246,6 +246,22 @@ pub struct PartDetail {
     pub models: Vec<Model>,
 }
 
+/// One entry in the part-usage log: `quantity` units of a part were consumed
+/// on a model (a repair, build, or swap) at `used_at`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, sqlx::FromRow)]
+pub struct UsageRecord {
+    pub id: i64,
+    pub part_id: i64,
+    pub part_name: String,
+    pub model_id: i64,
+    pub model_name: String,
+    pub model_category: Category,
+    pub quantity: i32,
+    pub notes: Option<String>,
+    /// ISO `YYYY-MM-DD` or `YYYY-MM-DDTHH:MM:SS`.
+    pub used_at: String,
+}
+
 // ---------------------------------------------------------------------------
 // Settings
 // ---------------------------------------------------------------------------
@@ -397,6 +413,61 @@ impl PartInput {
     }
 }
 
+/// Body for recording a usage entry. The part/model id not present in the
+/// body comes from the request path (`/parts/{id}/usage` vs
+/// `/models/{id}/usage`), so only the variable part of the entry lives here.
+#[derive(Debug, Default, Deserialize)]
+pub struct UsageInput {
+    /// Units consumed; defaults to 1.
+    #[serde(default)]
+    pub quantity: Option<i64>,
+    #[serde(default)]
+    pub notes: Option<String>,
+    /// Backdate; defaults to server "now" when omitted or empty.
+    #[serde(default)]
+    pub used_at: Option<String>,
+}
+
+impl UsageInput {
+    /// Trims/normalizes and validates. Returns `(quantity, notes, used_at)`
+    /// where `used_at` is `None` when the server clock should be used.
+    pub fn validate(
+        &self,
+    ) -> Result<(i32, Option<String>, Option<String>), crate::error::DomainError> {
+        let quantity = self.quantity.unwrap_or(1);
+        if quantity < 1 {
+            return Err(crate::error::DomainError::Invalid(
+                "quantity: must be a positive integer".into(),
+            ));
+        }
+        if quantity > i32::MAX as i64 {
+            return Err(crate::error::DomainError::Invalid(
+                "quantity: too large (max 2147483647)".into(),
+            ));
+        }
+        let notes = trim_opt(self.notes.clone());
+        let used_at = match self.used_at.as_deref() {
+            Some(raw) => {
+                let t = raw.trim();
+                if t.is_empty() {
+                    None
+                } else {
+                    let t = t.replacen(' ', "T", 1);
+                    if !is_valid_iso_datetime(&t) {
+                        return Err(crate::error::DomainError::Invalid(
+                            "used_at: must be a date (YYYY-MM-DD) or datetime (YYYY-MM-DDTHH:MM:SS)"
+                                .into(),
+                        ));
+                    }
+                    Some(t)
+                }
+            }
+            None => None,
+        };
+        Ok((quantity as i32, notes, used_at))
+    }
+}
+
 fn trim_opt(mut s: Option<String>) -> Option<String> {
     match s {
         Some(ref v) if v.trim().is_empty() => {
@@ -418,6 +489,12 @@ fn trim_opt(mut s: Option<String>) -> Option<String> {
 pub struct ModelListFilter {
     pub q: Option<String>,
     pub category: Option<Category>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UsageFilter {
+    pub part_id: Option<i64>,
+    pub model_id: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -490,6 +567,31 @@ pub fn is_valid_iso_date(s: &str) -> bool {
     day <= days_in_month(year, month)
 }
 
+/// Validates `YYYY-MM-DD` or `YYYY-MM-DDTHH:MM:SS` (calendar-correct,
+/// including leap years).
+pub fn is_valid_iso_datetime(s: &str) -> bool {
+    let bytes = s.as_bytes();
+    if bytes.len() == 10 {
+        return is_valid_iso_date(s);
+    }
+    if bytes.len() != 19 || bytes[10] != b'T' {
+        return false;
+    }
+    if !is_valid_iso_date(&s[0..10]) {
+        return false;
+    }
+    let Some(hour) = parse_num(&s[11..13]) else {
+        return false;
+    };
+    let Some(minute) = parse_num(&s[14..16]) else {
+        return false;
+    };
+    let Some(second) = parse_num(&s[17..19]) else {
+        return false;
+    };
+    hour <= 23 && minute <= 59 && second <= 59
+}
+
 fn parse_num(s: &str) -> Option<u32> {
     if s.is_empty() || !s.bytes().all(|b| b.is_ascii_digit()) {
         return None;
@@ -529,6 +631,22 @@ mod tests {
         assert!(!is_valid_iso_date("abcd-ef-gh"));
         assert!(!is_valid_iso_date(""));
         assert!(!is_valid_iso_date("2026-08-140"));
+    }
+
+    #[test]
+    fn validates_iso_datetimes() {
+        assert!(is_valid_iso_datetime("2026-08-14"));
+        assert!(is_valid_iso_datetime("2026-08-14T00:00:00"));
+        assert!(is_valid_iso_datetime("2026-08-14T23:59:59"));
+        assert!(is_valid_iso_datetime("2024-02-29T12:30:45"));
+        assert!(!is_valid_iso_datetime("2026-08-14T24:00:00"));
+        assert!(!is_valid_iso_datetime("2026-08-14T12:60:00"));
+        assert!(!is_valid_iso_datetime("2026-08-14T12:30:60"));
+        assert!(!is_valid_iso_datetime("2026-08-14T12:30")); // seconds required
+        assert!(!is_valid_iso_datetime("2026-08-14 12:30:00")); // 'T' separator
+        assert!(!is_valid_iso_datetime("2023-02-29T00:00:00"));
+        assert!(!is_valid_iso_datetime("2026-08-14T12:30:00Z"));
+        assert!(!is_valid_iso_datetime(""));
     }
 
     #[test]

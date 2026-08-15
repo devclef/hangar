@@ -8,7 +8,7 @@ use super::HangarRepo;
 use crate::error::DomainError;
 use crate::types::{
     like_pattern, Category, Model, ModelInput, ModelListRow, Part, PartInput, PartListRow,
-    PartSort, Settings,
+    PartSort, Settings, UsageRecord,
 };
 
 pub struct SqliteRepo {
@@ -277,6 +277,90 @@ impl HangarRepo for SqliteRepo {
         .fetch_all(&self.pool)
         .await?;
         Ok(rows)
+    }
+
+    // -- Part usage log -----------------------------------------------------
+
+    async fn list_usage(
+        &self,
+        part_id: Option<i64>,
+        model_id: Option<i64>,
+    ) -> Result<Vec<UsageRecord>, DomainError> {
+        let sql = "SELECT u.id, u.part_id, p.name AS part_name, u.model_id, m.name AS model_name, \
+                      m.category AS model_category, u.quantity, u.notes, u.used_at \
+                   FROM part_usage u \
+                   JOIN parts p ON p.id = u.part_id \
+                   JOIN models m ON m.id = u.model_id \
+                   WHERE (?1 IS NULL OR u.part_id = ?1) \
+                     AND (?2 IS NULL OR u.model_id = ?2) \
+                   ORDER BY u.used_at DESC, u.id DESC";
+        let rows = query_as::<_, UsageRecord>(sql)
+            .bind(part_id)
+            .bind(model_id)
+            .fetch_all(&self.pool)
+            .await?;
+        Ok(rows)
+    }
+
+    async fn add_usage(
+        &self,
+        part_id: i64,
+        model_id: i64,
+        quantity: i32,
+        notes: Option<&str>,
+        used_at: Option<&str>,
+    ) -> Result<UsageRecord, DomainError> {
+        let mut tx = self.pool.begin().await?;
+        let res = match used_at {
+            Some(stamp) => {
+                query(
+                    "INSERT INTO part_usage (part_id, model_id, quantity, notes, used_at) \
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                )
+                .bind(part_id)
+                .bind(model_id)
+                .bind(quantity)
+                .bind(notes)
+                .bind(stamp)
+                .execute(&mut *tx)
+                .await?
+            }
+            None => {
+                query(
+                    "INSERT INTO part_usage (part_id, model_id, quantity, notes) \
+                 VALUES (?1, ?2, ?3, ?4)",
+                )
+                .bind(part_id)
+                .bind(model_id)
+                .bind(quantity)
+                .bind(notes)
+                .execute(&mut *tx)
+                .await?
+            }
+        };
+        // Same clamp-at-0 semantics as adjust_quantity.
+        query(
+            "UPDATE parts SET quantity = MAX(0, quantity - ?1), \
+               updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') \
+               WHERE id = ?2",
+        )
+        .bind(quantity as i64)
+        .bind(part_id)
+        .execute(&mut *tx)
+        .await?;
+        tx.commit().await?;
+        let row = query_as::<_, UsageRecord>(
+            "SELECT u.id, u.part_id, p.name AS part_name, u.model_id, m.name AS model_name, \
+                     m.category AS model_category, u.quantity, u.notes, u.used_at \
+             FROM part_usage u \
+             JOIN parts p ON p.id = u.part_id \
+             JOIN models m ON m.id = u.model_id \
+             WHERE u.id = ?1",
+        )
+        .bind(res.last_insert_rowid())
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(row)
     }
 
     // -- Settings -----------------------------------------------------------

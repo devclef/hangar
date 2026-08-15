@@ -899,3 +899,347 @@ async fn database_file_is_created_on_disk() {
     drop(res);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+// ---------------------------------------------------------------------------
+// Part usage log
+// ---------------------------------------------------------------------------
+
+fn usage_part_body(model_id: i64, quantity: i64) -> serde_json::Value {
+    serde_json::json!({
+        "model_id": model_id,
+        "quantity": quantity,
+        "notes": "replaced during repair"
+    })
+}
+
+fn usage_model_body(part_id: i64, quantity: i64) -> serde_json::Value {
+    serde_json::json!({
+        "part_id": part_id,
+        "quantity": quantity
+    })
+}
+
+#[tokio::test]
+async fn usage_lifecycle_and_stock_decrement() {
+    let app = app().await;
+
+    let res = call(
+        app.clone(),
+        Method::POST,
+        "/api/models",
+        Some(model_json("Kraken 580", "heli")),
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::CREATED);
+    let model_id = id(&res.body);
+
+    let res = call(
+        app.clone(),
+        Method::POST,
+        "/api/parts",
+        Some(part_json("Main rotor blades", 5)),
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::CREATED);
+    let part_id = id(&res.body);
+
+    // record a usage (part-scoped)
+    let res = call(
+        app.clone(),
+        Method::POST,
+        &format!("/api/parts/{part_id}/usage"),
+        Some(usage_part_body(model_id, 2)),
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::CREATED);
+    let usage_id = id(&res.body);
+    assert_eq!(res.body["part_name"], "Main rotor blades");
+    assert_eq!(res.body["model_name"], "Kraken 580");
+    assert_eq!(res.body["model_category"], "heli");
+    assert_eq!(res.body["quantity"], 2);
+    assert_eq!(res.body["notes"], "replaced during repair");
+    assert!(res.body["used_at"].is_string());
+
+    // stock was decremented by the logged quantity
+    let res = call(
+        app.clone(),
+        Method::GET,
+        &format!("/api/parts/{part_id}"),
+        None,
+    )
+    .await;
+    assert_eq!(res.body["part"]["quantity"], 3);
+
+    // global log
+    let res = call(app.clone(), Method::GET, "/api/usage", None).await;
+    assert_eq!(res.status, StatusCode::OK);
+    let list = res.body.as_array().unwrap();
+    assert_eq!(list.len(), 1);
+    assert_eq!(list[0]["id"], usage_id);
+
+    // filters
+    let res = call(
+        app.clone(),
+        Method::GET,
+        &format!("/api/usage?part_id={part_id}"),
+        None,
+    )
+    .await;
+    assert_eq!(res.body.as_array().unwrap().len(), 1);
+
+    let res = call(app.clone(), Method::GET, "/api/usage?part_id=9999", None).await;
+    assert_eq!(res.body.as_array().unwrap().len(), 0);
+
+    let res = call(
+        app.clone(),
+        Method::GET,
+        &format!("/api/usage?part_id={part_id}&model_id={model_id}"),
+        None,
+    )
+    .await;
+    assert_eq!(res.body.as_array().unwrap().len(), 1);
+
+    let res = call(app.clone(), Method::GET, "/api/usage?model_id=9999", None).await;
+    assert_eq!(res.body.as_array().unwrap().len(), 0);
+}
+
+#[tokio::test]
+async fn usage_validation_and_errors() {
+    let app = app().await;
+
+    let res = call(
+        app.clone(),
+        Method::POST,
+        "/api/models",
+        Some(model_json("Kraken 580", "heli")),
+    )
+    .await;
+    let model_id = id(&res.body);
+    let res = call(
+        app.clone(),
+        Method::POST,
+        "/api/parts",
+        Some(part_json("Main rotor blades", 5)),
+    )
+    .await;
+    let part_id = id(&res.body);
+
+    // quantity must be positive
+    let res = call(
+        app.clone(),
+        Method::POST,
+        &format!("/api/parts/{part_id}/usage"),
+        Some(usage_part_body(model_id, 0)),
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::BAD_REQUEST);
+
+    // unknown model / unknown part
+    let res = call(
+        app.clone(),
+        Method::POST,
+        &format!("/api/parts/{part_id}/usage"),
+        Some(usage_part_body(9999, 1)),
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::NOT_FOUND);
+
+    let res = call(
+        app.clone(),
+        Method::POST,
+        "/api/parts/9999/usage",
+        Some(usage_part_body(model_id, 1)),
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::NOT_FOUND);
+
+    // bad backdate
+    let bad_date = serde_json::json!({
+        "model_id": model_id,
+        "quantity": 1,
+        "used_at": "2026-02-30"
+    });
+    let res = call(
+        app.clone(),
+        Method::POST,
+        &format!("/api/parts/{part_id}/usage"),
+        Some(bad_date),
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::BAD_REQUEST);
+
+    // date-only backdate round-trips; space separator is normalized to 'T'
+    let ok_date = serde_json::json!({
+        "model_id": model_id,
+        "quantity": 1,
+        "used_at": "2026-01-02 08:30:00"
+    });
+    let res = call(
+        app.clone(),
+        Method::POST,
+        &format!("/api/parts/{part_id}/usage"),
+        Some(ok_date),
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::CREATED);
+    assert_eq!(res.body["used_at"], "2026-01-02T08:30:00");
+}
+
+#[tokio::test]
+async fn usage_clamps_stock_at_zero() {
+    let app = app().await;
+
+    let res = call(
+        app.clone(),
+        Method::POST,
+        "/api/models",
+        Some(model_json("Kraken 580", "heli")),
+    )
+    .await;
+    let model_id = id(&res.body);
+    let res = call(
+        app.clone(),
+        Method::POST,
+        "/api/parts",
+        Some(part_json("Canopy", 1)),
+    )
+    .await;
+    let part_id = id(&res.body);
+
+    // logging more usage than is on hand: record keeps the real quantity,
+    // stock clamps at 0 (same rule as quantity adjusts)
+    let res = call(
+        app.clone(),
+        Method::POST,
+        &format!("/api/parts/{part_id}/usage"),
+        Some(usage_part_body(model_id, 3)),
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::CREATED);
+    assert_eq!(res.body["quantity"], 3);
+
+    let res = call(
+        app.clone(),
+        Method::GET,
+        &format!("/api/parts/{part_id}"),
+        None,
+    )
+    .await;
+    assert_eq!(res.body["part"]["quantity"], 0);
+}
+
+#[tokio::test]
+async fn usage_model_scoped_endpoint_and_ordering() {
+    let app = app().await;
+
+    let res = call(
+        app.clone(),
+        Method::POST,
+        "/api/models",
+        Some(model_json("Kraken 580", "heli")),
+    )
+    .await;
+    let model_a = id(&res.body);
+    let res = call(
+        app.clone(),
+        Method::POST,
+        "/api/models",
+        Some(model_json("Sparrow 90", "plane")),
+    )
+    .await;
+    let model_b = id(&res.body);
+    let res = call(
+        app.clone(),
+        Method::POST,
+        "/api/parts",
+        Some(part_json("Main rotor blades", 10)),
+    )
+    .await;
+    let part_id = id(&res.body);
+
+    // model-scoped record with a backdate
+    let res = call(
+        app.clone(),
+        Method::POST,
+        &format!("/api/models/{model_a}/usage"),
+        Some(serde_json::json!({
+            "part_id": part_id,
+            "quantity": 1,
+            "used_at": "2026-01-02"
+        })),
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::CREATED);
+    assert_eq!(res.body["model_name"], "Kraken 580");
+
+    // second record defaults to "now" (later than the backdate)
+    let res = call(
+        app.clone(),
+        Method::POST,
+        &format!("/api/models/{model_b}/usage"),
+        Some(usage_model_body(part_id, 1)),
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::CREATED);
+
+    // newest first
+    let res = call(app.clone(), Method::GET, "/api/usage", None).await;
+    let list = res.body.as_array().unwrap();
+    assert_eq!(list.len(), 2);
+    assert_eq!(list[0]["model_id"], model_b, "newest entry first");
+    assert_eq!(list[1]["model_id"], model_a);
+
+    // model-scoped filter
+    let res = call(
+        app.clone(),
+        Method::GET,
+        &format!("/api/usage?model_id={model_a}"),
+        None,
+    )
+    .await;
+    let list = res.body.as_array().unwrap();
+    assert_eq!(list.len(), 1);
+    assert_eq!(list[0]["part_id"], part_id);
+}
+
+#[tokio::test]
+async fn usage_deleted_with_its_part_and_model() {
+    let app = app().await;
+
+    let res = call(
+        app.clone(),
+        Method::POST,
+        "/api/models",
+        Some(model_json("Kraken 580", "heli")),
+    )
+    .await;
+    let model_id = id(&res.body);
+    let res = call(
+        app.clone(),
+        Method::POST,
+        "/api/parts",
+        Some(part_json("Main rotor blades", 5)),
+    )
+    .await;
+    let part_id = id(&res.body);
+    let res = call(
+        app.clone(),
+        Method::POST,
+        &format!("/api/parts/{part_id}/usage"),
+        Some(usage_part_body(model_id, 1)),
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::CREATED);
+
+    // deleting the part cascades its usage entries
+    let res = call(
+        app.clone(),
+        Method::DELETE,
+        &format!("/api/parts/{part_id}"),
+        None,
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::NO_CONTENT);
+    let res = call(app.clone(), Method::GET, "/api/usage", None).await;
+    assert_eq!(res.body.as_array().unwrap().len(), 0);
+}

@@ -4,11 +4,14 @@
     errorMessage,
     type ModelDetail as ModelDetailT,
     type Part,
+    type UsageRecord,
   } from '../lib/api';
   import { formatDate } from '../lib/format';
   import CategoryBadge from '../components/CategoryBadge.svelte';
   import StatusBadge from '../components/StatusBadge.svelte';
   import QuantityStepper from '../components/QuantityStepper.svelte';
+  import LogUsageForm from '../components/LogUsageForm.svelte';
+  import UsageLog from '../components/UsageLog.svelte';
   import Flash from '../components/Flash.svelte';
   import ErrorBanner from '../components/ErrorBanner.svelte';
   import Spinner from '../components/Spinner.svelte';
@@ -17,6 +20,7 @@
 
   let detail = $state<ModelDetailT | null>(null);
   let allParts = $state<Part[]>([]);
+  let usage = $state<UsageRecord[]>([]);
   let loading = $state(true);
   let error = $state<string | null>(null);
   let flash = $state<string | null>(null);
@@ -26,8 +30,11 @@
   async function load() {
     error = null;
     try {
-      detail = await api.getModel(id);
-      allParts = await api.listParts({ sort: 'name_asc' });
+      [detail, allParts, usage] = await Promise.all([
+        api.getModel(id),
+        api.listParts({ sort: 'name_asc' }),
+        api.listUsage({ model_id: id }),
+      ]);
     } catch (e) {
       error = errorMessage(e);
     } finally {
@@ -80,6 +87,17 @@
     try {
       const updated = await api.adjustQuantity(part.id, delta);
       part.quantity = updated.quantity;
+    } catch (e) {
+      error = errorMessage(e);
+    }
+  }
+
+  async function afterLogged() {
+    try {
+      [detail, usage] = await Promise.all([
+        api.getModel(id),
+        api.listUsage({ model_id: id }),
+      ]);
     } catch (e) {
       error = errorMessage(e);
     }
@@ -226,5 +244,21 @@
         </table>
       </div>
     {/if}
+  </div>
+
+  <div class="card mt-6">
+    <div class="border-b border-stone-200 px-4 py-3">
+      <h2 class="text-sm font-semibold uppercase tracking-wide text-stone-600">
+        Recent usage <span class="font-normal normal-case text-stone-400">({usage.length})</span>
+      </h2>
+    </div>
+    <div class="border-b border-stone-100 px-4 py-3">
+      <LogUsageForm model={detail.model} parts={allParts} onLogged={afterLogged} />
+    </div>
+    <UsageLog
+      records={usage}
+      emptyTitle="No parts have been logged as used on this model yet."
+      emptyHint="Log a usage above when you repair or modify the model."
+    />
   </div>
 {/if}

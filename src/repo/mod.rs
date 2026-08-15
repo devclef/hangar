@@ -6,7 +6,7 @@ pub mod sqlite;
 use crate::error::DomainError;
 use crate::types::{
     Category, Model, ModelInput, ModelListRow, Part, PartDetail, PartInput, PartListRow, PartSort,
-    Settings,
+    Settings, UsageRecord,
 };
 use async_trait::async_trait;
 
@@ -52,6 +52,25 @@ pub trait HangarRepo: Send + Sync {
     /// Replaces the model's full set of linked parts (deduped by caller).
     async fn replace_links(&self, model_id: i64, part_ids: &[i64]) -> Result<(), DomainError>;
     async fn list_part_models(&self, part_id: i64) -> Result<Vec<Model>, DomainError>;
+
+    // -- Part usage log -----------------------------------------------------
+
+    /// Latest entries first; either filter may be `None` for "any".
+    async fn list_usage(
+        &self,
+        part_id: Option<i64>,
+        model_id: Option<i64>,
+    ) -> Result<Vec<UsageRecord>, DomainError>;
+    /// Inserts the entry and decrements the part's stock (clamped at 0) in a
+    /// single transaction. `used_at` is `None` when "now" should be stamped.
+    async fn add_usage(
+        &self,
+        part_id: i64,
+        model_id: i64,
+        quantity: i32,
+        notes: Option<&str>,
+        used_at: Option<&str>,
+    ) -> Result<UsageRecord, DomainError>;
 
     // -- Settings -----------------------------------------------------------
 

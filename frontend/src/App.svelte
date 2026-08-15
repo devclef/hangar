@@ -7,6 +7,7 @@
   import PartListPage from './routes/PartListPage.svelte';
   import PartDetail from './routes/PartDetail.svelte';
   import PartFormPage from './routes/PartFormPage.svelte';
+  import UsagePage from './routes/UsagePage.svelte';
   import SettingsPage from './routes/SettingsPage.svelte';
 
   let route = $state<Route>(parseRoute());
@@ -22,6 +23,7 @@
 
   const isModel = $derived(route.page.startsWith('model'));
   const isPart = $derived(route.page.startsWith('part'));
+  const isUsage = $derived(route.page === 'usage');
   const isSettings = $derived(route.page === 'settings');
 </script>
 
@@ -62,6 +64,14 @@
           Parts
         </a>
         <a
+          href="#/usage"
+          class="nav-link {isUsage
+            ? 'bg-zinc-800 text-amber-300'
+            : 'text-zinc-300 hover:bg-zinc-800/60 hover:text-white'}"
+        >
+          Log
+        </a>
+        <a
           href="#/settings"
           class="nav-link {isSettings
             ? 'bg-zinc-800 text-amber-300'
@@ -87,6 +97,8 @@
       <PartDetail id={route.id} />
     {:else if route.page === 'part-form'}
       <PartFormPage id={route.id} />
+    {:else if route.page === 'usage'}
+      <UsagePage />
     {:else if route.page === 'settings'}
       <SettingsPage />
     {/if}

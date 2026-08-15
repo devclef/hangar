@@ -13,6 +13,7 @@ use crate::repo::sqlite::SqliteRepo;
 use crate::repo::HangarRepo;
 use crate::types::{
     Model, ModelDetail, ModelInput, Part, PartDetail, PartInput, PartListRow, PartSort, Settings,
+    UsageInput, UsageRecord,
 };
 
 #[async_trait]
@@ -51,6 +52,23 @@ pub trait ServiceApi: Send + Sync {
         model_id: i64,
         part_ids: Vec<i64>,
     ) -> Result<Vec<PartListRow>, DomainError>;
+
+    // -- Part usage log -----------------------------------------------------
+
+    /// Usage entries, latest first; either filter may be `None` for "any".
+    async fn list_usage(
+        &self,
+        part_id: Option<i64>,
+        model_id: Option<i64>,
+    ) -> Result<Vec<UsageRecord>, DomainError>;
+    /// Records that `quantity` units of `part_id` were used on `model_id`
+    /// and decrements the part's stock by the same amount (clamped at 0).
+    async fn record_usage(
+        &self,
+        part_id: i64,
+        model_id: i64,
+        input: UsageInput,
+    ) -> Result<UsageRecord, DomainError>;
 
     // -- Settings -----------------------------------------------------------
 
@@ -230,6 +248,34 @@ impl ServiceApi for Service {
         self.verify_parts_exist(&ids).await?;
         self.repo.replace_links(model_id, &ids).await?;
         self.repo.list_model_parts(model_id).await
+    }
+
+    async fn list_usage(
+        &self,
+        part_id: Option<i64>,
+        model_id: Option<i64>,
+    ) -> Result<Vec<UsageRecord>, DomainError> {
+        self.repo.list_usage(part_id, model_id).await
+    }
+
+    async fn record_usage(
+        &self,
+        part_id: i64,
+        model_id: i64,
+        input: UsageInput,
+    ) -> Result<UsageRecord, DomainError> {
+        self.require_part(self.repo.get_part(part_id).await?, part_id)?;
+        self.require_model(self.repo.get_model(model_id).await?, model_id)?;
+        let (quantity, notes, used_at) = input.validate()?;
+        self.repo
+            .add_usage(
+                part_id,
+                model_id,
+                quantity,
+                notes.as_deref(),
+                used_at.as_deref(),
+            )
+            .await
     }
 
     async fn get_settings(&self) -> Result<Settings, DomainError> {

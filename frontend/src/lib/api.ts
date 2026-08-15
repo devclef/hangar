@@ -60,6 +60,28 @@ export interface PartDetail {
   models: Model[];
 }
 
+/** One entry in the part-usage log (a repair, build, or swap). */
+export interface UsageRecord {
+  id: number;
+  part_id: number;
+  part_name: string;
+  model_id: number;
+  model_name: string;
+  model_category: Category;
+  quantity: number;
+  notes: string | null;
+  /** ISO date (YYYY-MM-DD) or datetime (YYYY-MM-DDTHH:MM:SS). */
+  used_at: string;
+}
+
+/** Payload for recording a usage; the fixed side comes from the URL. */
+export interface LogUsageInput {
+  quantity?: number;
+  notes?: string;
+  /** Optional backdate (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS); defaults to now. */
+  used_at?: string;
+}
+
 /** Optional part fields the user can toggle on the "Add part" form. */
 export type PartFormField =
   | 'quantity'
@@ -181,6 +203,28 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ delta }),
     });
+  },
+  logUsageForPart(partId: number, input: LogUsageInput & { model_id: number }): Promise<UsageRecord> {
+    return request(`/parts/${partId}/usage`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    });
+  },
+  logUsageForModel(modelId: number, input: LogUsageInput & { part_id: number }): Promise<UsageRecord> {
+    return request(`/models/${modelId}/usage`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    });
+  },
+
+  // Usage log
+  listUsage(params: { part_id?: number; model_id?: number } = {}): Promise<UsageRecord[]> {
+    return request(
+      `/usage${qs({
+        part_id: params.part_id !== undefined ? String(params.part_id) : undefined,
+        model_id: params.model_id !== undefined ? String(params.model_id) : undefined,
+      })}`,
+    );
   },
   listPartModels(id: number): Promise<Model[]> {
     return request(`/parts/${id}/models`);

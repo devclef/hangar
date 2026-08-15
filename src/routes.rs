@@ -15,7 +15,7 @@ use crate::error::DomainError;
 use crate::service::ServiceApi;
 use crate::types::{
     Model, ModelDetail, ModelInput, ModelListFilter, ModelListRow, Part, PartDetail, PartInput,
-    PartListFilter, PartListRow, Settings,
+    PartListFilter, PartListRow, Settings, UsageFilter, UsageInput, UsageRecord,
 };
 
 #[derive(Clone)]
@@ -47,6 +47,9 @@ pub fn router(state: AppState) -> Router {
         .route("/parts/{id}/quantity", post(adjust_quantity))
         .route("/parts/{id}/models", get(list_part_models).post(link_model))
         .route("/parts/{id}/models/{model_id}", delete(unlink_model))
+        .route("/usage", get(list_usage))
+        .route("/parts/{id}/usage", post(log_part_usage))
+        .route("/models/{id}/usage", post(log_model_usage))
         .route("/settings", get(get_settings).put(update_settings));
 
     Router::new()
@@ -106,6 +109,28 @@ pub struct ReplacePartsBody {
 #[derive(Deserialize)]
 pub struct AdjustQuantityBody {
     pub delta: i64,
+}
+
+#[derive(Deserialize)]
+pub struct LogPartUsageBody {
+    pub model_id: i64,
+    #[serde(default)]
+    pub quantity: Option<i64>,
+    #[serde(default)]
+    pub notes: Option<String>,
+    #[serde(default)]
+    pub used_at: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct LogModelUsageBody {
+    pub part_id: i64,
+    #[serde(default)]
+    pub quantity: Option<i64>,
+    #[serde(default)]
+    pub notes: Option<String>,
+    #[serde(default)]
+    pub used_at: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -286,6 +311,52 @@ async fn unlink_model(
 ) -> Result<StatusCode, DomainError> {
     st.service.unlink_part(model_id, id).await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+// ---------------------------------------------------------------------------
+// Part usage log
+// ---------------------------------------------------------------------------
+
+async fn list_usage(
+    State(st): State<AppState>,
+    filter: Result<Query<UsageFilter>, QueryRejection>,
+) -> Result<Json<Vec<UsageRecord>>, DomainError> {
+    let filter = parse_query(filter)?;
+    Ok(Json(
+        st.service
+            .list_usage(filter.part_id, filter.model_id)
+            .await?,
+    ))
+}
+
+async fn log_part_usage(
+    State(st): State<AppState>,
+    Path(id): Path<i64>,
+    body: Result<Json<LogPartUsageBody>, JsonRejection>,
+) -> Result<(StatusCode, Json<UsageRecord>), DomainError> {
+    let body = parse_body(body)?;
+    let input = UsageInput {
+        quantity: body.quantity,
+        notes: body.notes,
+        used_at: body.used_at,
+    };
+    let record = st.service.record_usage(id, body.model_id, input).await?;
+    Ok((StatusCode::CREATED, Json(record)))
+}
+
+async fn log_model_usage(
+    State(st): State<AppState>,
+    Path(id): Path<i64>,
+    body: Result<Json<LogModelUsageBody>, JsonRejection>,
+) -> Result<(StatusCode, Json<UsageRecord>), DomainError> {
+    let body = parse_body(body)?;
+    let input = UsageInput {
+        quantity: body.quantity,
+        notes: body.notes,
+        used_at: body.used_at,
+    };
+    let record = st.service.record_usage(body.part_id, id, input).await?;
+    Ok((StatusCode::CREATED, Json(record)))
 }
 
 // ---------------------------------------------------------------------------

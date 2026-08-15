@@ -8,6 +8,7 @@ export type Route =
   | { page: 'parts' }
   | { page: 'part'; id: number }
   | { page: 'part-form'; id?: number }
+  | { page: 'usage' }
   | { page: 'settings' };
 
 const toNum = (s: string | undefined): number | undefined =>
@@ -34,6 +35,8 @@ export function parseRoute(hash: string = window.location.hash): Route {
       }
       return { page: 'parts' };
     }
+    case 'usage':
+      return { page: 'usage' };
     case 'settings':
       return { page: 'settings' };
     default:
@@ -48,5 +51,6 @@ export const href = {
   parts: '#/parts',
   part: (id: number) => `#/parts/${id}`,
   partForm: (id?: number) => (id === undefined ? '#/parts/new' : `#/parts/${id}/edit`),
+  usage: '#/usage',
   settings: '#/settings',
 };

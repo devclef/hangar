@@ -4,10 +4,13 @@
     errorMessage,
     type Model,
     type PartDetail as PartDetailT,
+    type UsageRecord,
   } from '../lib/api';
   import { formatCurrency, isUrl } from '../lib/format';
   import CategoryBadge from '../components/CategoryBadge.svelte';
   import QuantityStepper from '../components/QuantityStepper.svelte';
+  import LogUsageForm from '../components/LogUsageForm.svelte';
+  import UsageLog from '../components/UsageLog.svelte';
   import Flash from '../components/Flash.svelte';
   import ErrorBanner from '../components/ErrorBanner.svelte';
   import Spinner from '../components/Spinner.svelte';
@@ -16,6 +19,7 @@
 
   let detail = $state<PartDetailT | null>(null);
   let allModels = $state<Model[]>([]);
+  let usage = $state<UsageRecord[]>([]);
   let loading = $state(true);
   let error = $state<string | null>(null);
   let flash = $state<string | null>(null);
@@ -27,7 +31,10 @@
     error = null;
     try {
       detail = await api.getPart(id);
-      allModels = await api.listModels();
+      [allModels, usage] = await Promise.all([
+        api.listModels(),
+        api.listUsage({ part_id: id }),
+      ]);
       // Best-effort: settings only affect how the cost is displayed.
       api
         .getSettings()
@@ -85,6 +92,17 @@
     try {
       const updated = await api.adjustQuantity(id, delta);
       detail.part.quantity = updated.quantity;
+    } catch (e) {
+      error = errorMessage(e);
+    }
+  }
+
+  async function afterLogged() {
+    try {
+      [detail, usage] = await Promise.all([
+        api.getPart(id),
+        api.listUsage({ part_id: id }),
+      ]);
     } catch (e) {
       error = errorMessage(e);
     }
@@ -249,5 +267,21 @@
         </table>
       </div>
     {/if}
+  </div>
+
+  <div class="card mt-6">
+    <div class="border-b border-stone-200 px-4 py-3">
+      <h2 class="text-sm font-semibold uppercase tracking-wide text-stone-600">
+        Recent usage <span class="font-normal normal-case text-stone-400">({usage.length})</span>
+      </h2>
+    </div>
+    <div class="border-b border-stone-100 px-4 py-3">
+      <LogUsageForm part={detail.part} models={allModels} onLogged={afterLogged} />
+    </div>
+    <UsageLog
+      records={usage}
+      emptyTitle="No usage recorded for this part yet."
+      emptyHint="Log a usage above when this part goes into a model."
+    />
   </div>
 {/if}

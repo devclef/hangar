@@ -53,5 +53,7 @@ jobs:
       - name: Push chart
         if: github.event_name != 'pull_request'
         run: |
+          version="$(helm show chart dist/*.tgz | awk '/^version:/{print $2}')"
           helm push dist/*.tgz "oci://${OCI_REGISTRY}/${OCI_REPOSITORY}"
-          helm show chart "oci://${OCI_REGISTRY}/${OCI_REPOSITORY}" --version "$(helm show chart dist/*.tgz | awk '/^version:/{print $2}')"
+          # Helm 4 addresses the chart as <registry>/<namespace>/<chart-name>:<version>.
+          helm show chart "oci://${OCI_REGISTRY}/${OCI_REPOSITORY}/hangar" --version "$version"

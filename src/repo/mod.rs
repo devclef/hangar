@@ -6,6 +6,7 @@ pub mod sqlite;
 use crate::error::DomainError;
 use crate::types::{
     Category, Model, ModelInput, ModelListRow, Part, PartDetail, PartInput, PartListRow, PartSort,
+    Settings,
 };
 use async_trait::async_trait;
 
@@ -52,6 +53,13 @@ pub trait HangarRepo: Send + Sync {
     /// Replaces the model's full set of linked parts (deduped by caller).
     async fn replace_links(&self, model_id: i64, part_ids: &[i64]) -> Result<(), DomainError>;
     async fn list_part_models(&self, part_id: i64) -> Result<Vec<Model>, DomainError>;
+
+    // -- Settings -----------------------------------------------------------
+
+    /// Returns `None` when no settings have been stored yet.
+    async fn get_settings(&self) -> Result<Option<Settings>, DomainError>;
+    /// Upserts the full settings document.
+    async fn save_settings(&self, settings: &Settings) -> Result<(), DomainError>;
 }
 
 /// Convenience for tests and app wiring.

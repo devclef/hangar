@@ -7,6 +7,7 @@
   import PartListPage from './routes/PartListPage.svelte';
   import PartDetail from './routes/PartDetail.svelte';
   import PartFormPage from './routes/PartFormPage.svelte';
+  import SettingsPage from './routes/SettingsPage.svelte';
 
   let route = $state<Route>(parseRoute());
 
@@ -21,6 +22,7 @@
 
   const isModel = $derived(route.page.startsWith('model'));
   const isPart = $derived(route.page.startsWith('part'));
+  const isSettings = $derived(route.page === 'settings');
 </script>
 
 <div class="flex min-h-screen flex-col bg-stone-100 text-stone-900">
@@ -59,6 +61,14 @@
         >
           Parts
         </a>
+        <a
+          href="#/settings"
+          class="nav-link {isSettings
+            ? 'bg-zinc-800 text-amber-300'
+            : 'text-zinc-300 hover:bg-zinc-800/60 hover:text-white'}"
+        >
+          Settings
+        </a>
       </nav>
       <span class="ml-auto text-xs text-zinc-500">v0.1</span>
     </div>
@@ -77,6 +87,8 @@
       <PartDetail id={route.id} />
     {:else if route.page === 'part-form'}
       <PartFormPage id={route.id} />
+    {:else if route.page === 'settings'}
+      <SettingsPage />
     {/if}
   </main>
 

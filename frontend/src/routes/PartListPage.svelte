@@ -5,7 +5,7 @@
     type Part,
     type PartSortParam,
   } from '../lib/api';
-  import { isUrl } from '../lib/format';
+  import { formatCurrency, isUrl } from '../lib/format';
   import QuantityStepper from '../components/QuantityStepper.svelte';
   import ErrorBanner from '../components/ErrorBanner.svelte';
   import Spinner from '../components/Spinner.svelte';
@@ -25,6 +25,7 @@
   let q = $state('');
   let partType = $state('');
   let sort = $state<PartSortParam>('quantity_asc');
+  let currency = $state('USD');
 
   async function load() {
     error = null;
@@ -34,6 +35,11 @@
         part_type: partType || undefined,
         sort,
       });
+      // Best-effort: settings only affect how the cost is displayed.
+      api
+        .getSettings()
+        .then((s) => (currency = s.currency))
+        .catch(() => {});
     } catch (e) {
       error = errorMessage(e);
     } finally {
@@ -130,6 +136,8 @@
           <tr>
             <th class="th">Part</th>
             <th class="th">Type</th>
+            <th class="th">Vendor</th>
+            <th class="th">Cost</th>
             <th class="th">Qty</th>
             <th class="th">Models</th>
             <th class="th">Link / SKU</th>
@@ -146,6 +154,20 @@
                 {/if}
               </td>
               <td class="td text-stone-600">{p.part_type ?? '—'}</td>
+              <td class="td max-w-40 text-stone-600">
+                {#if p.vendor}
+                  <span class="block truncate" title={p.vendor}>{p.vendor}</span>
+                {:else}
+                  <span class="text-stone-400">—</span>
+                {/if}
+              </td>
+              <td class="td text-stone-600">
+                {#if p.cost !== null}
+                  {formatCurrency(p.cost, currency)}
+                {:else}
+                  <span class="text-stone-400">—</span>
+                {/if}
+              </td>
               <td class="td">
                 <div class="flex items-center gap-2">
                   <QuantityStepper qty={p.quantity} onAdjust={(d) => adjustQty(p, d)} />

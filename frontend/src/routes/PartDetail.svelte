@@ -5,7 +5,7 @@
     type Model,
     type PartDetail as PartDetailT,
   } from '../lib/api';
-  import { isUrl } from '../lib/format';
+  import { formatCurrency, isUrl } from '../lib/format';
   import CategoryBadge from '../components/CategoryBadge.svelte';
   import QuantityStepper from '../components/QuantityStepper.svelte';
   import Flash from '../components/Flash.svelte';
@@ -21,12 +21,18 @@
   let flash = $state<string | null>(null);
   let linkSelection = $state<number | ''>('');
   let busy = $state(false);
+  let currency = $state('USD');
 
   async function load() {
     error = null;
     try {
       detail = await api.getPart(id);
       allModels = await api.listModels();
+      // Best-effort: settings only affect how the cost is displayed.
+      api
+        .getSettings()
+        .then((s) => (currency = s.currency))
+        .catch(() => {});
     } catch (e) {
       error = errorMessage(e);
     } finally {
@@ -139,6 +145,18 @@
         <span class="label">Quantity on hand</span>
         <QuantityStepper qty={detail.part.quantity} onAdjust={adjustQty} />
       </div>
+      {#if detail.part.cost !== null}
+        <div>
+          <span class="label">Cost</span>
+          <span class="text-stone-700">{formatCurrency(detail.part.cost, currency)}</span>
+        </div>
+      {/if}
+      {#if detail.part.vendor}
+        <div>
+          <span class="label">Vendor</span>
+          <span class="text-stone-700">{detail.part.vendor}</span>
+        </div>
+      {/if}
       <div>
         <span class="label">Compatible with</span>
         <span class="text-stone-700">

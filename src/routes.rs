@@ -15,7 +15,7 @@ use crate::error::DomainError;
 use crate::service::ServiceApi;
 use crate::types::{
     Model, ModelDetail, ModelInput, ModelListFilter, ModelListRow, Part, PartDetail, PartInput,
-    PartListFilter, PartListRow,
+    PartListFilter, PartListRow, Settings,
 };
 
 #[derive(Clone)]
@@ -46,7 +46,8 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/parts/{id}/quantity", post(adjust_quantity))
         .route("/parts/{id}/models", get(list_part_models).post(link_model))
-        .route("/parts/{id}/models/{model_id}", delete(unlink_model));
+        .route("/parts/{id}/models/{model_id}", delete(unlink_model))
+        .route("/settings", get(get_settings).put(update_settings));
 
     Router::new()
         .nest("/api", api)
@@ -289,4 +290,20 @@ async fn unlink_model(
 ) -> Result<StatusCode, DomainError> {
     st.service.unlink_part(model_id, id).await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+// ---------------------------------------------------------------------------
+// Settings
+// ---------------------------------------------------------------------------
+
+async fn get_settings(State(st): State<AppState>) -> Result<Json<Settings>, DomainError> {
+    Ok(Json(st.service.get_settings().await?))
+}
+
+async fn update_settings(
+    State(st): State<AppState>,
+    input: Result<Json<Settings>, JsonRejection>,
+) -> Result<Json<Settings>, DomainError> {
+    let input = parse_body(input)?;
+    Ok(Json(st.service.update_settings(input).await?))
 }

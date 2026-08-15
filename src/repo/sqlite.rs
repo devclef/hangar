@@ -2,12 +2,13 @@
 
 use async_trait::async_trait;
 use sqlx::sqlite::SqlitePool;
-use sqlx::{query, query_as};
+use sqlx::{query, query_as, query_scalar};
 
 use super::HangarRepo;
 use crate::error::DomainError;
 use crate::types::{
-    like_pattern, Category, Model, ModelInput, ModelListRow, Part, PartInput, PartListRow, PartSort,
+    like_pattern, Category, Model, ModelInput, ModelListRow, Part, PartInput, PartListRow,
+    PartSort, Settings,
 };
 
 pub struct SqliteRepo {
@@ -149,8 +150,8 @@ impl HangarRepo for SqliteRepo {
 
     async fn create_part(&self, input: &PartInput) -> Result<Part, DomainError> {
         let row = query_as::<_, Part>(
-            "INSERT INTO parts (name, part_type, quantity, notes, link, photo_url) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6) RETURNING *",
+            "INSERT INTO parts (name, part_type, quantity, notes, link, photo_url, cost, vendor) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8) RETURNING *",
         )
         .bind(&input.name)
         .bind(&input.part_type)
@@ -158,6 +159,8 @@ impl HangarRepo for SqliteRepo {
         .bind(&input.notes)
         .bind(&input.link)
         .bind(&input.photo_url)
+        .bind(input.cost)
+        .bind(&input.vendor)
         .fetch_one(&self.pool)
         .await?;
         Ok(row)
@@ -166,8 +169,9 @@ impl HangarRepo for SqliteRepo {
     async fn update_part(&self, id: i64, input: &PartInput) -> Result<Option<Part>, DomainError> {
         let row = query_as::<_, Part>(
             "UPDATE parts SET name = ?1, part_type = ?2, quantity = ?3, notes = ?4, link = ?5, \
-              photo_url = ?6, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') \
-             WHERE id = ?7 RETURNING *",
+              photo_url = ?6, cost = ?7, vendor = ?8, \
+              updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') \
+             WHERE id = ?9 RETURNING *",
         )
         .bind(&input.name)
         .bind(&input.part_type)
@@ -175,6 +179,8 @@ impl HangarRepo for SqliteRepo {
         .bind(&input.notes)
         .bind(&input.link)
         .bind(&input.photo_url)
+        .bind(input.cost)
+        .bind(&input.vendor)
         .bind(id)
         .fetch_optional(&self.pool)
         .await?;
@@ -278,5 +284,35 @@ impl HangarRepo for SqliteRepo {
         .fetch_all(&self.pool)
         .await?;
         Ok(rows)
+    }
+
+    // -- Settings -----------------------------------------------------------
+
+    async fn get_settings(&self) -> Result<Option<Settings>, DomainError> {
+        let row: Option<String> = query_scalar("SELECT value FROM settings WHERE key = 'app'")
+            .fetch_optional(&self.pool)
+            .await?;
+        match row {
+            Some(json) => {
+                let settings = serde_json::from_str(&json).map_err(|e| {
+                    DomainError::Db(anyhow::anyhow!("corrupt settings document: {e}"))
+                })?;
+                Ok(Some(settings))
+            }
+            None => Ok(None),
+        }
+    }
+
+    async fn save_settings(&self, settings: &Settings) -> Result<(), DomainError> {
+        let json = serde_json::to_string(settings)
+            .map_err(|e| DomainError::Db(anyhow::anyhow!("serializing settings: {e}")))?;
+        query(
+            "INSERT INTO settings (key, value) VALUES ('app', ?1) \
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        )
+        .bind(&json)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
     }
 }

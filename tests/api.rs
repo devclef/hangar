@@ -716,6 +716,147 @@ async fn unknown_api_route_returns_json_404() {
 }
 
 #[tokio::test]
+async fn part_cost_and_vendor_roundtrip() {
+    let app = app().await;
+
+    let mut body = part_json("Main rotor blades", 2);
+    body["cost"] = serde_json::json!(45.99);
+    body["vendor"] = "Heli-Flex".into();
+    let res = call(app.clone(), Method::POST, "/api/parts", Some(body)).await;
+    assert_eq!(res.status, StatusCode::CREATED);
+    let part_id = id(&res.body);
+    assert_eq!(res.body["cost"], 45.99);
+    assert_eq!(res.body["vendor"], "Heli-Flex");
+
+    // list rows carry the new fields too
+    let res = call(app.clone(), Method::GET, "/api/parts", None).await;
+    let row = &res.body.as_array().unwrap()[0];
+    assert_eq!(row["cost"], 45.99);
+    assert_eq!(row["vendor"], "Heli-Flex");
+
+    // full-replace update without the fields clears them
+    let res = call(
+        app.clone(),
+        Method::PUT,
+        &format!("/api/parts/{part_id}"),
+        Some(part_json("Main rotor blades", 3)),
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::OK);
+    assert_eq!(res.body["cost"], serde_json::Value::Null);
+    assert_eq!(res.body["vendor"], serde_json::Value::Null);
+
+    // negative cost is rejected
+    let mut bad = part_json("Bad", 1);
+    bad["cost"] = serde_json::json!(-5.0);
+    let res = call(app.clone(), Method::POST, "/api/parts", Some(bad)).await;
+    assert_eq!(res.status, StatusCode::BAD_REQUEST);
+
+    // a string where a number is expected is rejected
+    let mut bad = part_json("Bad", 1);
+    bad["cost"] = serde_json::json!("12.50");
+    let res = call(app, Method::POST, "/api/parts", Some(bad)).await;
+    assert_eq!(res.status, StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn settings_default_and_update() {
+    let app = app().await;
+
+    // first read returns the built-in defaults
+    let res = call(app.clone(), Method::GET, "/api/settings", None).await;
+    assert_eq!(res.status, StatusCode::OK);
+    let fields: Vec<&str> = res.body["part_form_fields"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_str().unwrap())
+        .collect();
+    assert_eq!(
+        fields,
+        vec![
+            "part_type",
+            "quantity",
+            "cost",
+            "vendor",
+            "link",
+            "photo_url",
+            "notes"
+        ]
+    );
+    assert_eq!(res.body["currency"], "USD");
+
+    // update: hide some fields, change currency (normalized, dupes collapsed)
+    let res = call(
+        app.clone(),
+        Method::PUT,
+        "/api/settings",
+        Some(serde_json::json!({
+            "part_form_fields": ["part_type", "quantity", "cost", "cost"],
+            "currency": "  eur "
+        })),
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::OK);
+    assert_eq!(res.body["currency"], "EUR");
+    let fields: Vec<&str> = res.body["part_form_fields"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_str().unwrap())
+        .collect();
+    assert_eq!(fields, vec!["part_type", "quantity", "cost"]);
+
+    // the update is persisted
+    let res = call(app, Method::GET, "/api/settings", None).await;
+    assert_eq!(res.status, StatusCode::OK);
+    assert_eq!(res.body["currency"], "EUR");
+    assert_eq!(res.body["part_form_fields"].as_array().unwrap().len(), 3);
+}
+
+#[tokio::test]
+async fn settings_validation_errors() {
+    let app = app().await;
+
+    // unknown field keys are rejected
+    let res = call(
+        app.clone(),
+        Method::PUT,
+        "/api/settings",
+        Some(serde_json::json!({
+            "part_form_fields": ["part_type", "bogus_field"],
+            "currency": "USD"
+        })),
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::BAD_REQUEST);
+    assert_eq!(res.body["error"], "invalid_request");
+
+    // invalid currency codes are rejected
+    let res = call(
+        app.clone(),
+        Method::PUT,
+        "/api/settings",
+        Some(serde_json::json!({
+            "part_form_fields": [],
+            "currency": "U.S!"
+        })),
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::BAD_REQUEST);
+
+    // a missing required key is a deserialization failure -> 400
+    let res = call(
+        app,
+        Method::PUT,
+        "/api/settings",
+        Some(serde_json::json!({ "part_form_fields": [] })),
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
 async fn invalid_route_param_is_400() {
     let app = app().await;
     let res = call(app, Method::GET, "/api/models/not-a-number", None).await;

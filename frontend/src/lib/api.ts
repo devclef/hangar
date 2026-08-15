@@ -24,6 +24,8 @@ export interface Part {
   notes: string | null;
   link: string | null;
   photo_url: string | null;
+  cost: number | null;
+  vendor: string | null;
   model_count?: number;
   /** '|' joined names of linked models, null when none. */
   model_names?: string | null;
@@ -46,6 +48,8 @@ export interface PartInput {
   notes: string | null;
   link: string | null;
   photo_url: string | null;
+  cost: number | null;
+  vendor: string | null;
 }
 
 export interface ModelDetail {
@@ -57,6 +61,33 @@ export interface PartDetail {
   part: Part;
   models: Model[];
 }
+
+/** Optional part fields the user can toggle on the "Add part" form. */
+export type PartFormField =
+  | 'part_type'
+  | 'quantity'
+  | 'cost'
+  | 'vendor'
+  | 'link'
+  | 'photo_url'
+  | 'notes';
+
+export interface Settings {
+  part_form_fields: PartFormField[];
+  /** ISO-4217 code (e.g. "USD") used to display part costs. */
+  currency: string;
+}
+
+/** Labels for the toggleable part fields, in the order the form lays them out. */
+export const PART_FORM_FIELDS: Array<{ key: PartFormField; label: string; hint: string }> = [
+  { key: 'part_type', label: 'Type', hint: 'Component kind — rotor blade, ESC, radio…' },
+  { key: 'quantity', label: 'Quantity on hand', hint: 'How many you currently have' },
+  { key: 'cost', label: 'Cost', hint: 'What you paid, per unit' },
+  { key: 'vendor', label: 'Vendor', hint: 'Where you got it from' },
+  { key: 'link', label: 'Link / SKU', hint: 'Product page URL or stock-keeping number' },
+  { key: 'photo_url', label: 'Photo URL', hint: 'Image of the part' },
+  { key: 'notes', label: 'Notes', hint: 'Size, pitch, material, anything else' },
+];
 
 export class ApiError extends Error {
   constructor(
@@ -166,6 +197,14 @@ export const api = {
   },
   unlinkModel(partId: number, modelId: number): Promise<void> {
     return request(`/parts/${partId}/models/${modelId}`, { method: 'DELETE' });
+  },
+
+  // Settings
+  getSettings(): Promise<Settings> {
+    return request('/settings');
+  },
+  updateSettings(settings: Settings): Promise<Settings> {
+    return request('/settings', { method: 'PUT', body: JSON.stringify(settings) });
   },
 };
 

@@ -12,7 +12,7 @@ use crate::error::{DomainError, NotFound};
 use crate::repo::sqlite::SqliteRepo;
 use crate::repo::HangarRepo;
 use crate::types::{
-    Model, ModelDetail, ModelInput, Part, PartDetail, PartInput, PartListRow, PartSort,
+    Model, ModelDetail, ModelInput, Part, PartDetail, PartInput, PartListRow, PartSort, Settings,
 };
 
 #[async_trait]
@@ -52,6 +52,13 @@ pub trait ServiceApi: Send + Sync {
         model_id: i64,
         part_ids: Vec<i64>,
     ) -> Result<Vec<PartListRow>, DomainError>;
+
+    // -- Settings -----------------------------------------------------------
+
+    /// Returns the stored settings, or the built-in defaults when none exist.
+    async fn get_settings(&self) -> Result<Settings, DomainError>;
+    /// Validates and stores the full settings document; returns what was stored.
+    async fn update_settings(&self, settings: Settings) -> Result<Settings, DomainError>;
 }
 
 /// The concrete, trait-backed service used by the app and tests.
@@ -225,6 +232,16 @@ impl ServiceApi for Service {
         self.verify_parts_exist(&ids).await?;
         self.repo.replace_links(model_id, &ids).await?;
         self.repo.list_model_parts(model_id).await
+    }
+
+    async fn get_settings(&self) -> Result<Settings, DomainError> {
+        Ok(self.repo.get_settings().await?.unwrap_or_default())
+    }
+
+    async fn update_settings(&self, settings: Settings) -> Result<Settings, DomainError> {
+        let settings = settings.validate()?;
+        self.repo.save_settings(&settings).await?;
+        Ok(settings)
     }
 }
 

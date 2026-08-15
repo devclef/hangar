@@ -118,6 +118,34 @@ impl std::str::FromStr for ModelStatus {
 
 sqlx_enum!(ModelStatus);
 
+/// A part field the user may choose to show or hide on the "add part" form.
+/// The serialized name matches the `parts` column, so the wire value and the
+/// database column line up.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PartFormField {
+    PartType,
+    Quantity,
+    Cost,
+    Vendor,
+    Link,
+    PhotoUrl,
+    Notes,
+}
+
+impl PartFormField {
+    /// Every optional part field, in the order the form lays them out.
+    pub const ALL: [PartFormField; 7] = [
+        PartFormField::PartType,
+        PartFormField::Quantity,
+        PartFormField::Cost,
+        PartFormField::Vendor,
+        PartFormField::Link,
+        PartFormField::PhotoUrl,
+        PartFormField::Notes,
+    ];
+}
+
 // ---------------------------------------------------------------------------
 // Entities
 // ---------------------------------------------------------------------------
@@ -134,7 +162,7 @@ pub struct Model {
     pub photo_url: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, sqlx::FromRow)]
+#[derive(Debug, Clone, PartialEq, Serialize, sqlx::FromRow)]
 pub struct Part {
     pub id: i64,
     pub name: String,
@@ -143,6 +171,8 @@ pub struct Part {
     pub notes: Option<String>,
     pub link: Option<String>,
     pub photo_url: Option<String>,
+    pub cost: Option<f64>,
+    pub vendor: Option<String>,
 }
 
 /// A model as returned by list endpoints (includes how many parts are linked).
@@ -176,7 +206,7 @@ impl ModelListRow {
 
 /// A part as returned by list endpoints (includes linked-model summary).
 /// `model_names` is a `'|'`-joined list of linked model names (NULL when none).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, sqlx::FromRow)]
+#[derive(Debug, Clone, PartialEq, Serialize, sqlx::FromRow)]
 pub struct PartListRow {
     pub id: i64,
     pub name: String,
@@ -185,6 +215,8 @@ pub struct PartListRow {
     pub notes: Option<String>,
     pub link: Option<String>,
     pub photo_url: Option<String>,
+    pub cost: Option<f64>,
+    pub vendor: Option<String>,
     pub model_count: i64,
     pub model_names: Option<String>,
 }
@@ -199,6 +231,8 @@ impl PartListRow {
             notes: self.notes,
             link: self.link,
             photo_url: self.photo_url,
+            cost: self.cost,
+            vendor: self.vendor,
         }
     }
 }
@@ -215,6 +249,47 @@ pub struct ModelDetail {
 pub struct PartDetail {
     pub part: Part,
     pub models: Vec<Model>,
+}
+
+// ---------------------------------------------------------------------------
+// Settings
+// ---------------------------------------------------------------------------
+
+/// User preferences, stored as a single JSON document.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Settings {
+    /// Which optional part fields the "add part" form should show.
+    pub part_form_fields: Vec<PartFormField>,
+    /// ISO-4217 currency code used to display part costs (e.g. "USD").
+    pub currency: String,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            part_form_fields: PartFormField::ALL.to_vec(),
+            currency: "USD".to_string(),
+        }
+    }
+}
+
+impl Settings {
+    /// Dedupes the field list (preserving order) and normalizes/validates the
+    /// currency code. Returns the normalized settings on success.
+    pub fn validate(mut self) -> Result<Self, crate::error::DomainError> {
+        let mut seen = std::collections::HashSet::new();
+        self.part_form_fields.retain(|f| seen.insert(*f));
+        let currency = self.currency.trim().to_uppercase();
+        if !(3..=8).contains(&currency.len())
+            || !currency.bytes().all(|b| b.is_ascii_alphanumeric())
+        {
+            return Err(crate::error::DomainError::Invalid(
+                "currency: must be a 3-8 character alphanumeric code (e.g. USD)".into(),
+            ));
+        }
+        self.currency = currency;
+        Ok(self)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -284,6 +359,10 @@ pub struct PartInput {
     pub link: Option<String>,
     #[serde(default)]
     pub photo_url: Option<String>,
+    #[serde(default)]
+    pub cost: Option<f64>,
+    #[serde(default)]
+    pub vendor: Option<String>,
 }
 
 impl PartInput {
@@ -304,6 +383,7 @@ impl PartInput {
         self.notes = trim_opt(self.notes);
         self.link = trim_opt(self.link);
         self.photo_url = trim_opt(self.photo_url);
+        self.vendor = trim_opt(self.vendor);
         if self.quantity < 0 {
             return Err(crate::error::DomainError::Invalid(
                 "quantity: must be zero or a positive integer".into(),
@@ -313,6 +393,13 @@ impl PartInput {
             return Err(crate::error::DomainError::Invalid(
                 "quantity: too large (max 2147483647)".into(),
             ));
+        }
+        if let Some(cost) = self.cost {
+            if !cost.is_finite() || cost < 0.0 {
+                return Err(crate::error::DomainError::Invalid(
+                    "cost: must be a finite number, zero or more".into(),
+                ));
+            }
         }
         Ok(self)
     }
@@ -497,6 +584,19 @@ mod tests {
 
     #[test]
     fn validates_quantity_bounds() {
+        fn sample(quantity: i64) -> PartInput {
+            PartInput {
+                name: "blades".into(),
+                part_type: None,
+                quantity,
+                notes: None,
+                link: None,
+                photo_url: None,
+                cost: None,
+                vendor: None,
+            }
+        }
+
         let ok = PartInput {
             name: "blades".into(),
             part_type: None,
@@ -504,31 +604,73 @@ mod tests {
             notes: None,
             link: None,
             photo_url: None,
+            cost: None,
+            vendor: None,
         }
         .validate();
         assert!(ok.is_ok());
 
-        let neg = PartInput {
-            name: "blades".into(),
-            part_type: None,
-            quantity: -1,
-            notes: None,
-            link: None,
-            photo_url: None,
-        }
-        .validate();
+        let neg = sample(-1).validate();
         assert!(neg.is_err());
 
-        let huge = PartInput {
-            name: "blades".into(),
-            part_type: None,
-            quantity: i32::MAX as i64 + 1,
-            notes: None,
-            link: None,
-            photo_url: None,
-        }
-        .validate();
+        let huge = sample(i32::MAX as i64 + 1).validate();
         assert!(huge.is_err());
+    }
+
+    #[test]
+    fn validates_cost_and_vendor() {
+        fn sample(cost: Option<f64>) -> PartInput {
+            PartInput {
+                name: "blades".into(),
+                part_type: None,
+                quantity: 1,
+                notes: None,
+                link: None,
+                photo_url: None,
+                cost,
+                vendor: None,
+            }
+        }
+
+        let mut ok = sample(Some(12.5));
+        ok.vendor = Some("  Vortex  ".into());
+        let out = ok.validate().unwrap();
+        assert_eq!(out.cost, Some(12.5));
+        assert_eq!(out.vendor.as_deref(), Some("Vortex"));
+
+        let neg = sample(Some(-1.0));
+        assert!(neg.validate().is_err());
+
+        assert!(sample(Some(f64::NAN)).validate().is_err());
+        assert!(sample(Some(f64::INFINITY)).validate().is_err());
+    }
+
+    #[test]
+    fn settings_default_and_validation() {
+        let defaults = Settings::default();
+        assert_eq!(defaults.part_form_fields, PartFormField::ALL.to_vec());
+        assert_eq!(defaults.currency, "USD");
+
+        let s = Settings {
+            part_form_fields: vec![
+                PartFormField::Cost,
+                PartFormField::Cost,
+                PartFormField::Notes,
+            ],
+            currency: "  usd ".into(),
+        };
+        let out = s.validate().unwrap();
+        assert_eq!(
+            out.part_form_fields,
+            vec![PartFormField::Cost, PartFormField::Notes]
+        );
+        assert_eq!(out.currency, "USD");
+
+        let bad = Settings {
+            part_form_fields: vec![],
+            currency: "U.S!".into(),
+        };
+        assert!(bad.validate().is_err());
     }
 
     #[test]

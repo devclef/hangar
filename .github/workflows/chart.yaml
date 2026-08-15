@@ -1,0 +1,57 @@
+name: Chart
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  CHART_DIR: charts/hangar
+  OCI_REGISTRY: ghcr.io
+  OCI_REPOSITORY: ${{ github.repository }}-chart
+  HELM_VERSION: v4.2.4
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Helm
+        run: |
+          curl -fsSL "https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz" | tar xz -C /tmp
+          mv /tmp/linux-amd64/helm /usr/local/bin/helm
+          helm version --short
+
+      - name: Lint chart
+        run: helm lint $CHART_DIR --strict
+
+      - name: Render templates
+        run: |
+          helm template hangar $CHART_DIR > /dev/null
+          helm template hangar $CHART_DIR --set ingress.enabled=true > /dev/null
+          helm template hangar $CHART_DIR --set persistence.enabled=false > /dev/null
+
+      - name: Package chart
+        run: |
+          helm package $CHART_DIR -d dist
+          helm show chart dist/*.tgz
+
+      - name: Log in to the Container registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.OCI_REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push chart
+        if: github.event_name != 'pull_request'
+        run: |
+          helm push dist/*.tgz "oci://${OCI_REGISTRY}/${OCI_REPOSITORY}"
+          helm show chart "oci://${OCI_REGISTRY}/${OCI_REPOSITORY}" --version "$(helm show chart dist/*.tgz | awk '/^version:/{print $2}')"

@@ -1,0 +1,17 @@
+Hangar is deployed with {{ .Values.replicaCount }} replica(s).
+
+{{- if .Values.ingress.enabled }}
+Get the application URL:
+{{- range .Values.ingress.hosts }}
+  http{{ if $.Values.ingress.tls }}s{{ end }}://{{ .host }}/
+{{- end }}
+{{- else if contains "LoadBalancer" .Values.service.type }}
+1. Wait for the LoadBalancer to get an external address:
+   kubectl get svc {{ include "hangar.fullname" . }} -n {{ .Release.Namespace }} -o wide
+2. Open that address in a browser.
+{{- else }}
+Port-forward the service and open http://127.0.0.1:{{ .Values.service.port }}/:
+  kubectl port-forward svc/{{ include "hangar.fullname" . }} -n {{ .Release.Namespace }} {{ .Values.service.port }}:{{ .Values.service.port }}
+{{- end }}
+
+Data is stored in a persistent volume mounted at /data.

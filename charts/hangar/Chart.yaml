@@ -1,0 +1,15 @@
+apiVersion: v2
+name: hangar
+description: Hangar — self-hosted RC hobby inventory tracker
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+home: https://github.com/devclef/hangar
+sources:
+  - https://github.com/devclef/hangar
+keywords:
+  - rc
+  - inventory
+  - self-hosted
+maintainers:
+  - name: devclef

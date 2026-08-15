@@ -1,0 +1,73 @@
+replicaCount: 1
+
+image:
+  repository: ghcr.io/devclef/hangar
+  pullPolicy: IfNotPresent
+  # Overrides the image tag. The chart is published from main, where the image
+  # is tagged "latest" (plus branch and sha tags).
+  tag: "latest"
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  # Name of an existing service account to use when create is false.
+  name: ""
+
+podAnnotations: {}
+
+podSecurityContext:
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: hangar.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+service:
+  type: ClusterIP
+  port: 8080
+
+persistence:
+  enabled: true
+  # Requested size for the SQLite data volume.
+  size: 1Gi
+  # storageClass: "-" forces the cluster default.
+  storageClass: ""
+  accessModes:
+    - ReadWriteOnce
+  # Use an existing PVC instead of creating one.
+  existingClaim: ""
+
+# Environment variables passed to the container.
+env:
+  PORT: "8080"
+  DATA_DIR: /data
+  STATIC_DIR: /app/static
+  RUST_LOG: info
+
+probes:
+  path: /api/health
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    memory: 256Mi

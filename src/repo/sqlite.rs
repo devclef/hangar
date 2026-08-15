@@ -7,7 +7,7 @@ use sqlx::{query, query_as};
 use super::HangarRepo;
 use crate::error::DomainError;
 use crate::types::{
-    like_pattern, Category, Model, ModelListRow, ModelInput, Part, PartInput, PartListRow, PartSort,
+    like_pattern, Category, Model, ModelInput, ModelListRow, Part, PartInput, PartListRow, PartSort,
 };
 
 pub struct SqliteRepo {
@@ -73,7 +73,11 @@ impl HangarRepo for SqliteRepo {
         Ok(row)
     }
 
-    async fn update_model(&self, id: i64, input: &ModelInput) -> Result<Option<Model>, DomainError> {
+    async fn update_model(
+        &self,
+        id: i64,
+        input: &ModelInput,
+    ) -> Result<Option<Model>, DomainError> {
         let row = query_as::<_, Model>(
             "UPDATE models SET name = ?1, category = ?2, manufacturer = ?3, notes = ?4, \
               date_acquired = ?5, status = ?6, photo_url = ?7, \

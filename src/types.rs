@@ -19,7 +19,8 @@ macro_rules! sqlx_enum {
                 value: SqliteValueRef<'r>,
             ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
                 let s = <String as Decode<Sqlite>>::decode(value)?;
-                s.parse().map_err(|e| -> Box<dyn std::error::Error + Send + Sync> {
+                s.parse()
+                    .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> {
                         Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e))
                     })
             }
@@ -74,7 +75,9 @@ impl std::str::FromStr for Category {
             "drone" => Ok(Category::Drone),
             "boat" => Ok(Category::Boat),
             "other" => Ok(Category::Other),
-            other => Err(format!("unknown category `{other}` (expected heli, plane, car, drone, boat, or other)")),
+            other => Err(format!(
+                "unknown category `{other}` (expected heli, plane, car, drone, boat, or other)"
+            )),
         }
     }
 }
@@ -106,13 +109,14 @@ impl std::str::FromStr for ModelStatus {
             "active" => Ok(ModelStatus::Active),
             "retired" => Ok(ModelStatus::Retired),
             "sold" => Ok(ModelStatus::Sold),
-            other => Err(format!("unknown status `{other}` (expected active, retired, or sold)")),
+            other => Err(format!(
+                "unknown status `{other}` (expected active, retired, or sold)"
+            )),
         }
     }
 }
 
 sqlx_enum!(ModelStatus);
-
 
 // ---------------------------------------------------------------------------
 // Entities
@@ -240,7 +244,9 @@ impl ModelInput {
     pub fn validate(mut self) -> Result<Self, crate::error::DomainError> {
         let name = self.name.trim();
         if name.is_empty() {
-            return Err(crate::error::DomainError::Invalid("name: must not be empty".into()));
+            return Err(crate::error::DomainError::Invalid(
+                "name: must not be empty".into(),
+            ));
         }
         if name.len() > 200 {
             return Err(crate::error::DomainError::Invalid(
@@ -284,7 +290,9 @@ impl PartInput {
     pub fn validate(mut self) -> Result<Self, crate::error::DomainError> {
         let name = self.name.trim();
         if name.is_empty() {
-            return Err(crate::error::DomainError::Invalid("name: must not be empty".into()));
+            return Err(crate::error::DomainError::Invalid(
+                "name: must not be empty".into(),
+            ));
         }
         if name.len() > 200 {
             return Err(crate::error::DomainError::Invalid(
@@ -389,9 +397,15 @@ pub fn is_valid_iso_date(s: &str) -> bool {
     if bytes.len() != 10 || bytes[4] != b'-' || bytes[7] != b'-' {
         return false;
     }
-    let Some(year) = parse_num(&s[0..4]) else { return false };
-    let Some(month) = parse_num(&s[5..7]) else { return false };
-    let Some(day) = parse_num(&s[8..10]) else { return false };
+    let Some(year) = parse_num(&s[0..4]) else {
+        return false;
+    };
+    let Some(month) = parse_num(&s[5..7]) else {
+        return false;
+    };
+    let Some(day) = parse_num(&s[8..10]) else {
+        return false;
+    };
     if year < 1 || !(1..=12).contains(&month) || day < 1 {
         return false;
     }
@@ -408,7 +422,10 @@ fn parse_num(s: &str) -> Option<u32> {
 fn days_in_month(year: u32, month: u32) -> u32 {
     const DAYS: [u32; 12] = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
     let base = DAYS[(month - 1) as usize];
-    if month == 2 && year.is_multiple_of(4) && (!year.is_multiple_of(100) || year.is_multiple_of(400)) {
+    if month == 2
+        && year.is_multiple_of(4)
+        && (!year.is_multiple_of(100) || year.is_multiple_of(400))
+    {
         29
     } else {
         base

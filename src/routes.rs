@@ -34,22 +34,18 @@ pub fn router(state: AppState) -> Router {
         )
         .route(
             "/models/{id}/parts",
-            get(list_model_parts).post(link_part).put(replace_model_parts),
+            get(list_model_parts)
+                .post(link_part)
+                .put(replace_model_parts),
         )
-        .route(
-            "/models/{id}/parts/{part_id}",
-            delete(unlink_part),
-        )
+        .route("/models/{id}/parts/{part_id}", delete(unlink_part))
         .route("/parts", get(list_parts).post(create_part))
         .route(
             "/parts/{id}",
             get(get_part).put(update_part).delete(delete_part),
         )
         .route("/parts/{id}/quantity", post(adjust_quantity))
-        .route(
-            "/parts/{id}/models",
-            get(list_part_models).post(link_model),
-        )
+        .route("/parts/{id}/models", get(list_part_models).post(link_model))
         .route("/parts/{id}/models/{model_id}", delete(unlink_model));
 
     Router::new()
@@ -128,7 +124,11 @@ async fn list_models(
     filter: Result<Query<ModelListFilter>, QueryRejection>,
 ) -> Result<Json<Vec<ModelListRow>>, DomainError> {
     let filter = parse_query(filter)?;
-    Ok(Json(st.service.list_models(filter.q.as_deref(), filter.category).await?))
+    Ok(Json(
+        st.service
+            .list_models(filter.q.as_deref(), filter.category)
+            .await?,
+    ))
 }
 
 async fn create_model(
@@ -136,10 +136,16 @@ async fn create_model(
     input: Result<Json<ModelInput>, JsonRejection>,
 ) -> Result<(StatusCode, Json<Model>), DomainError> {
     let input = parse_body(input)?;
-    Ok((StatusCode::CREATED, Json(st.service.create_model(input).await?)))
+    Ok((
+        StatusCode::CREATED,
+        Json(st.service.create_model(input).await?),
+    ))
 }
 
-async fn get_model(State(st): State<AppState>, Path(id): Path<i64>) -> Result<Json<ModelDetail>, DomainError> {
+async fn get_model(
+    State(st): State<AppState>,
+    Path(id): Path<i64>,
+) -> Result<Json<ModelDetail>, DomainError> {
     Ok(Json(st.service.get_model_detail(id).await?))
 }
 
@@ -152,7 +158,10 @@ async fn update_model(
     Ok(Json(st.service.update_model(id, input).await?))
 }
 
-async fn delete_model(State(st): State<AppState>, Path(id): Path<i64>) -> Result<StatusCode, DomainError> {
+async fn delete_model(
+    State(st): State<AppState>,
+    Path(id): Path<i64>,
+) -> Result<StatusCode, DomainError> {
     st.service.delete_model(id).await?;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -188,7 +197,9 @@ async fn replace_model_parts(
     body: Result<Json<ReplacePartsBody>, JsonRejection>,
 ) -> Result<Json<Vec<PartListRow>>, DomainError> {
     let body = parse_body(body)?;
-    Ok(Json(st.service.replace_model_parts(id, body.part_ids).await?))
+    Ok(Json(
+        st.service.replace_model_parts(id, body.part_ids).await?,
+    ))
 }
 
 // ---------------------------------------------------------------------------
@@ -202,17 +213,30 @@ async fn list_parts(
     let filter = parse_query(filter)?;
     Ok(Json(
         st.service
-            .list_parts(filter.q.as_deref(), filter.part_type.as_deref(), filter.sort)
+            .list_parts(
+                filter.q.as_deref(),
+                filter.part_type.as_deref(),
+                filter.sort,
+            )
             .await?,
     ))
 }
 
-async fn create_part(State(st): State<AppState>, input: Result<Json<PartInput>, JsonRejection>) -> Result<(StatusCode, Json<Part>), DomainError> {
+async fn create_part(
+    State(st): State<AppState>,
+    input: Result<Json<PartInput>, JsonRejection>,
+) -> Result<(StatusCode, Json<Part>), DomainError> {
     let input = parse_body(input)?;
-    Ok((StatusCode::CREATED, Json(st.service.create_part(input).await?)))
+    Ok((
+        StatusCode::CREATED,
+        Json(st.service.create_part(input).await?),
+    ))
 }
 
-async fn get_part(State(st): State<AppState>, Path(id): Path<i64>) -> Result<Json<PartDetail>, DomainError> {
+async fn get_part(
+    State(st): State<AppState>,
+    Path(id): Path<i64>,
+) -> Result<Json<PartDetail>, DomainError> {
     Ok(Json(st.service.get_part_detail(id).await?))
 }
 
@@ -225,7 +249,10 @@ async fn update_part(
     Ok(Json(st.service.update_part(id, input).await?))
 }
 
-async fn delete_part(State(st): State<AppState>, Path(id): Path<i64>) -> Result<StatusCode, DomainError> {
+async fn delete_part(
+    State(st): State<AppState>,
+    Path(id): Path<i64>,
+) -> Result<StatusCode, DomainError> {
     st.service.delete_part(id).await?;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -239,7 +266,10 @@ async fn adjust_quantity(
     Ok(Json(st.service.adjust_quantity(id, body.delta).await?))
 }
 
-async fn list_part_models(State(st): State<AppState>, Path(id): Path<i64>) -> Result<Json<Vec<Model>>, DomainError> {
+async fn list_part_models(
+    State(st): State<AppState>,
+    Path(id): Path<i64>,
+) -> Result<Json<Vec<Model>>, DomainError> {
     Ok(Json(st.service.list_part_models(id).await?))
 }
 
@@ -260,4 +290,3 @@ async fn unlink_model(
     st.service.unlink_part(model_id, id).await?;
     Ok(StatusCode::NO_CONTENT)
 }
-

@@ -18,14 +18,23 @@ use crate::types::{
 #[async_trait]
 pub trait ServiceApi: Send + Sync {
     // -- Models -------------------------------------------------------------
-    async fn list_models(&self, q: Option<&str>, category: Option<crate::types::Category>) -> Result<Vec<crate::types::ModelListRow>, DomainError>;
+    async fn list_models(
+        &self,
+        q: Option<&str>,
+        category: Option<crate::types::Category>,
+    ) -> Result<Vec<crate::types::ModelListRow>, DomainError>;
     async fn get_model_detail(&self, id: i64) -> Result<ModelDetail, DomainError>;
     async fn create_model(&self, input: ModelInput) -> Result<Model, DomainError>;
     async fn update_model(&self, id: i64, input: ModelInput) -> Result<Model, DomainError>;
     async fn delete_model(&self, id: i64) -> Result<(), DomainError>;
 
     // -- Parts --------------------------------------------------------------
-    async fn list_parts(&self, q: Option<&str>, part_type: Option<&str>, sort: PartSort) -> Result<Vec<PartListRow>, DomainError>;
+    async fn list_parts(
+        &self,
+        q: Option<&str>,
+        part_type: Option<&str>,
+        sort: PartSort,
+    ) -> Result<Vec<PartListRow>, DomainError>;
     async fn get_part_detail(&self, id: i64) -> Result<PartDetail, DomainError>;
     async fn create_part(&self, input: PartInput) -> Result<Part, DomainError>;
     async fn update_part(&self, id: i64, input: PartInput) -> Result<Part, DomainError>;
@@ -38,7 +47,11 @@ pub trait ServiceApi: Send + Sync {
     async fn list_part_models(&self, part_id: i64) -> Result<Vec<Model>, DomainError>;
     async fn link_part(&self, model_id: i64, part_id: i64) -> Result<(), DomainError>;
     async fn unlink_part(&self, model_id: i64, part_id: i64) -> Result<(), DomainError>;
-    async fn replace_model_parts(&self, model_id: i64, part_ids: Vec<i64>) -> Result<Vec<PartListRow>, DomainError>;
+    async fn replace_model_parts(
+        &self,
+        model_id: i64,
+        part_ids: Vec<i64>,
+    ) -> Result<Vec<PartListRow>, DomainError>;
 }
 
 /// The concrete, trait-backed service used by the app and tests.
@@ -217,7 +230,11 @@ impl ServiceApi for Service {
 
 // Private helper kept off the public trait.
 impl Service {
-    async fn require_part_model_update(&self, id: i64, input: ModelInput) -> Result<Model, DomainError> {
+    async fn require_part_model_update(
+        &self,
+        id: i64,
+        input: ModelInput,
+    ) -> Result<Model, DomainError> {
         let model = self.repo.update_model(id, &input).await?;
         self.require_model(model, id)
     }

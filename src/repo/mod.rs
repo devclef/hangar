@@ -3,26 +3,36 @@
 
 pub mod sqlite;
 
-use async_trait::async_trait;
 use crate::error::DomainError;
 use crate::types::{
-    Category, Model, ModelListRow, ModelInput, Part, PartDetail, PartInput, PartListRow, PartSort,
+    Category, Model, ModelInput, ModelListRow, Part, PartDetail, PartInput, PartListRow, PartSort,
 };
+use async_trait::async_trait;
 
 #[async_trait]
 pub trait HangarRepo: Send + Sync {
     // -- Models -------------------------------------------------------------
 
-    async fn list_models(&self, q: Option<&str>, category: Option<Category>) -> Result<Vec<ModelListRow>, DomainError>;
+    async fn list_models(
+        &self,
+        q: Option<&str>,
+        category: Option<Category>,
+    ) -> Result<Vec<ModelListRow>, DomainError>;
     async fn get_model(&self, id: i64) -> Result<Option<Model>, DomainError>;
     async fn create_model(&self, input: &ModelInput) -> Result<Model, DomainError>;
-    async fn update_model(&self, id: i64, input: &ModelInput) -> Result<Option<Model>, DomainError>;
+    async fn update_model(&self, id: i64, input: &ModelInput)
+        -> Result<Option<Model>, DomainError>;
     /// Returns true if a row was deleted, false if the model did not exist.
     async fn delete_model(&self, id: i64) -> Result<bool, DomainError>;
 
     // -- Parts --------------------------------------------------------------
 
-    async fn list_parts(&self, q: Option<&str>, part_type: Option<&str>, sort: PartSort) -> Result<Vec<PartListRow>, DomainError>;
+    async fn list_parts(
+        &self,
+        q: Option<&str>,
+        part_type: Option<&str>,
+        sort: PartSort,
+    ) -> Result<Vec<PartListRow>, DomainError>;
     async fn get_part(&self, id: i64) -> Result<Option<Part>, DomainError>;
     async fn create_part(&self, input: &PartInput) -> Result<Part, DomainError>;
     async fn update_part(&self, id: i64, input: &PartInput) -> Result<Option<Part>, DomainError>;

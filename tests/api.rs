@@ -93,7 +93,13 @@ async fn model_crud_lifecycle() {
     let app = app().await;
 
     // create
-    let res = call(app.clone(), Method::POST, "/api/models", Some(model_json("Kraken 580", "heli"))).await;
+    let res = call(
+        app.clone(),
+        Method::POST,
+        "/api/models",
+        Some(model_json("Kraken 580", "heli")),
+    )
+    .await;
     assert_eq!(res.status, StatusCode::CREATED);
     let model_id = id(&res.body);
     assert_eq!(res.body["category"], "heli");
@@ -107,7 +113,13 @@ async fn model_crud_lifecycle() {
     assert_eq!(list[0]["part_count"], 0);
 
     // detail
-    let res = call(app.clone(), Method::GET, &format!("/api/models/{model_id}"), None).await;
+    let res = call(
+        app.clone(),
+        Method::GET,
+        &format!("/api/models/{model_id}"),
+        None,
+    )
+    .await;
     assert_eq!(res.status, StatusCode::OK);
     assert_eq!(res.body["model"]["name"], "Kraken 580");
     assert!(res.body["parts"].as_array().unwrap().is_empty());
@@ -115,20 +127,44 @@ async fn model_crud_lifecycle() {
     // update
     let mut updated = model_json("Kraken 580 V2", "heli");
     updated["status"] = "retired".into();
-    let res = call(app.clone(), Method::PUT, &format!("/api/models/{model_id}"), Some(updated)).await;
+    let res = call(
+        app.clone(),
+        Method::PUT,
+        &format!("/api/models/{model_id}"),
+        Some(updated),
+    )
+    .await;
     assert_eq!(res.status, StatusCode::OK);
     assert_eq!(res.body["status"], "retired");
     assert_eq!(res.body["name"], "Kraken 580 V2");
 
     // delete
-    let res = call(app.clone(), Method::DELETE, &format!("/api/models/{model_id}"), None).await;
+    let res = call(
+        app.clone(),
+        Method::DELETE,
+        &format!("/api/models/{model_id}"),
+        None,
+    )
+    .await;
     assert_eq!(res.status, StatusCode::NO_CONTENT);
-    let res = call(app.clone(), Method::GET, &format!("/api/models/{model_id}"), None).await;
+    let res = call(
+        app.clone(),
+        Method::GET,
+        &format!("/api/models/{model_id}"),
+        None,
+    )
+    .await;
     assert_eq!(res.status, StatusCode::NOT_FOUND);
     assert_eq!(res.body["error"], "not_found");
 
     // delete again -> 404
-    let res = call(app, Method::DELETE, &format!("/api/models/{model_id}"), None).await;
+    let res = call(
+        app,
+        Method::DELETE,
+        &format!("/api/models/{model_id}"),
+        None,
+    )
+    .await;
     assert_eq!(res.status, StatusCode::NOT_FOUND);
 }
 
@@ -136,21 +172,51 @@ async fn model_crud_lifecycle() {
 async fn model_validation_errors() {
     let app = app().await;
 
-    let res = call(app.clone(), Method::POST, "/api/models", Some(serde_json::json!({"name": "  ", "category": "heli"}))).await;
+    let res = call(
+        app.clone(),
+        Method::POST,
+        "/api/models",
+        Some(serde_json::json!({"name": "  ", "category": "heli"})),
+    )
+    .await;
     assert_eq!(res.status, StatusCode::BAD_REQUEST);
     assert_eq!(res.body["error"], "invalid_request");
 
-    let res = call(app.clone(), Method::POST, "/api/models", Some(serde_json::json!({"name": "X", "category": "spaceship"}))).await;
+    let res = call(
+        app.clone(),
+        Method::POST,
+        "/api/models",
+        Some(serde_json::json!({"name": "X", "category": "spaceship"})),
+    )
+    .await;
     assert_eq!(res.status, StatusCode::BAD_REQUEST);
 
-    let res = call(app.clone(), Method::POST, "/api/models", Some(serde_json::json!({"name": "X", "category": "car", "date_acquired": "2026-02-30"}))).await;
+    let res = call(
+        app.clone(),
+        Method::POST,
+        "/api/models",
+        Some(serde_json::json!({"name": "X", "category": "car", "date_acquired": "2026-02-30"})),
+    )
+    .await;
     assert_eq!(res.status, StatusCode::BAD_REQUEST);
 
-    let res = call(app.clone(), Method::POST, "/api/models", Some(serde_json::json!({"name": "X", "category": "car", "status": "flying"}))).await;
+    let res = call(
+        app.clone(),
+        Method::POST,
+        "/api/models",
+        Some(serde_json::json!({"name": "X", "category": "car", "status": "flying"})),
+    )
+    .await;
     assert_eq!(res.status, StatusCode::BAD_REQUEST);
 
     // default status is active when omitted
-    let res = call(app, Method::POST, "/api/models", Some(serde_json::json!({"name": "No Status", "category": "car"}))).await;
+    let res = call(
+        app,
+        Method::POST,
+        "/api/models",
+        Some(serde_json::json!({"name": "No Status", "category": "car"})),
+    )
+    .await;
     assert_eq!(res.status, StatusCode::CREATED);
     assert_eq!(res.body["status"], "active");
 }
@@ -163,7 +229,13 @@ async fn model_filters() {
         ("Beta Plane", "plane"),
         ("Gamma Heli", "heli"),
     ] {
-        let res = call(app.clone(), Method::POST, "/api/models", Some(model_json(name, cat))).await;
+        let res = call(
+            app.clone(),
+            Method::POST,
+            "/api/models",
+            Some(model_json(name, cat)),
+        )
+        .await;
         assert_eq!(res.status, StatusCode::CREATED);
     }
 
@@ -188,43 +260,97 @@ async fn model_filters() {
 async fn part_crud_and_quantity_math() {
     let app = app().await;
 
-    let res = call(app.clone(), Method::POST, "/api/parts", Some(part_json("Main rotor blades", 5))).await;
+    let res = call(
+        app.clone(),
+        Method::POST,
+        "/api/parts",
+        Some(part_json("Main rotor blades", 5)),
+    )
+    .await;
     assert_eq!(res.status, StatusCode::CREATED);
     let part_id = id(&res.body);
     assert_eq!(res.body["quantity"], 5);
 
     // negative quantity rejected
-    let res = call(app.clone(), Method::POST, "/api/parts", Some(part_json("Bad", -1))).await;
+    let res = call(
+        app.clone(),
+        Method::POST,
+        "/api/parts",
+        Some(part_json("Bad", -1)),
+    )
+    .await;
     assert_eq!(res.status, StatusCode::BAD_REQUEST);
 
     // absolute set
-    let res = call(app.clone(), Method::PUT, &format!("/api/parts/{part_id}"), Some(part_json("Main rotor blades", 2))).await;
+    let res = call(
+        app.clone(),
+        Method::PUT,
+        &format!("/api/parts/{part_id}"),
+        Some(part_json("Main rotor blades", 2)),
+    )
+    .await;
     assert_eq!(res.status, StatusCode::OK);
     assert_eq!(res.body["quantity"], 2);
 
     // relative adjust: down, then clamp at 0
-    let res = call(app.clone(), Method::POST, &format!("/api/parts/{part_id}/quantity"), Some(serde_json::json!({"delta": -1}))).await;
+    let res = call(
+        app.clone(),
+        Method::POST,
+        &format!("/api/parts/{part_id}/quantity"),
+        Some(serde_json::json!({"delta": -1})),
+    )
+    .await;
     assert_eq!(res.status, StatusCode::OK);
     assert_eq!(res.body["quantity"], 1);
 
-    let res = call(app.clone(), Method::POST, &format!("/api/parts/{part_id}/quantity"), Some(serde_json::json!({"delta": -100}))).await;
+    let res = call(
+        app.clone(),
+        Method::POST,
+        &format!("/api/parts/{part_id}/quantity"),
+        Some(serde_json::json!({"delta": -100})),
+    )
+    .await;
     assert_eq!(res.status, StatusCode::OK);
     assert_eq!(res.body["quantity"], 0, "quantity clamps at zero");
 
     // delta of zero is invalid
-    let res = call(app.clone(), Method::POST, &format!("/api/parts/{part_id}/quantity"), Some(serde_json::json!({"delta": 0}))).await;
+    let res = call(
+        app.clone(),
+        Method::POST,
+        &format!("/api/parts/{part_id}/quantity"),
+        Some(serde_json::json!({"delta": 0})),
+    )
+    .await;
     assert_eq!(res.status, StatusCode::BAD_REQUEST);
 
     // back up
-    let res = call(app.clone(), Method::POST, &format!("/api/parts/{part_id}/quantity"), Some(serde_json::json!({"delta": 7}))).await;
+    let res = call(
+        app.clone(),
+        Method::POST,
+        &format!("/api/parts/{part_id}/quantity"),
+        Some(serde_json::json!({"delta": 7})),
+    )
+    .await;
     assert_eq!(res.body["quantity"], 7);
 
     // unknown part
-    let res = call(app.clone(), Method::POST, "/api/parts/9999/quantity", Some(serde_json::json!({"delta": 1}))).await;
+    let res = call(
+        app.clone(),
+        Method::POST,
+        "/api/parts/9999/quantity",
+        Some(serde_json::json!({"delta": 1})),
+    )
+    .await;
     assert_eq!(res.status, StatusCode::NOT_FOUND);
 
     // delete
-    let res = call(app.clone(), Method::DELETE, &format!("/api/parts/{part_id}"), None).await;
+    let res = call(
+        app.clone(),
+        Method::DELETE,
+        &format!("/api/parts/{part_id}"),
+        None,
+    )
+    .await;
     assert_eq!(res.status, StatusCode::NO_CONTENT);
     let res = call(app, Method::GET, &format!("/api/parts/{part_id}"), None).await;
     assert_eq!(res.status, StatusCode::NOT_FOUND);
@@ -234,22 +360,51 @@ async fn part_crud_and_quantity_math() {
 async fn part_list_search_and_sort() {
     let app = app().await;
     let mut ids = Vec::new();
-    for (name, qty) in [("Blade set C", 5), ("Blade set A", 0), ("ESC 60A", 2), ("Skid set", 1)] {
-        let res = call(app.clone(), Method::POST, "/api/parts", Some(part_json(name, qty))).await;
+    for (name, qty) in [
+        ("Blade set C", 5),
+        ("Blade set A", 0),
+        ("ESC 60A", 2),
+        ("Skid set", 1),
+    ] {
+        let res = call(
+            app.clone(),
+            Method::POST,
+            "/api/parts",
+            Some(part_json(name, qty)),
+        )
+        .await;
         assert_eq!(res.status, StatusCode::CREATED);
         ids.push(id(&res.body));
     }
 
     // quantity ascending surfaces out-of-stock first
-    let res = call(app.clone(), Method::GET, "/api/parts?sort=quantity_asc", None).await;
+    let res = call(
+        app.clone(),
+        Method::GET,
+        "/api/parts?sort=quantity_asc",
+        None,
+    )
+    .await;
     let list = res.body.as_array().unwrap();
-    let qtys: Vec<i64> = list.iter().map(|p| p["quantity"].as_i64().unwrap()).collect();
+    let qtys: Vec<i64> = list
+        .iter()
+        .map(|p| p["quantity"].as_i64().unwrap())
+        .collect();
     assert_eq!(qtys, vec![0, 1, 2, 5]);
 
     // name descending
     let res = call(app.clone(), Method::GET, "/api/parts?sort=name_desc", None).await;
-    let names: Vec<&str> = res.body.as_array().unwrap().iter().map(|p| p["name"].as_str().unwrap()).collect();
-    assert_eq!(names, vec!["Skid set", "ESC 60A", "Blade set C", "Blade set A"]);
+    let names: Vec<&str> = res
+        .body
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| p["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        names,
+        vec!["Skid set", "ESC 60A", "Blade set C", "Blade set A"]
+    );
 
     // invalid sort -> 400
     let res = call(app.clone(), Method::GET, "/api/parts?sort=bogus", None).await;
@@ -258,7 +413,13 @@ async fn part_list_search_and_sort() {
     // search by name and type
     let res = call(app.clone(), Method::GET, "/api/parts?q=blade", None).await;
     assert_eq!(res.body.as_array().unwrap().len(), 2);
-    let res = call(app.clone(), Method::GET, "/api/parts?part_type=spare&q=esc", None).await;
+    let res = call(
+        app.clone(),
+        Method::GET,
+        "/api/parts?part_type=spare&q=esc",
+        None,
+    )
+    .await;
     let list = res.body.as_array().unwrap();
     assert_eq!(list.len(), 1);
     assert_eq!(list[0]["name"], "ESC 60A");
@@ -275,13 +436,37 @@ async fn part_list_search_and_sort() {
 async fn association_link_unlink_replace() {
     let app = app().await;
 
-    let m = call(app.clone(), Method::POST, "/api/models", Some(model_json("Kraken 580", "heli"))).await;
+    let m = call(
+        app.clone(),
+        Method::POST,
+        "/api/models",
+        Some(model_json("Kraken 580", "heli")),
+    )
+    .await;
     let model_id = id(&m.body);
-    let p1 = call(app.clone(), Method::POST, "/api/parts", Some(part_json("Main rotor blade set", 2))).await;
+    let p1 = call(
+        app.clone(),
+        Method::POST,
+        "/api/parts",
+        Some(part_json("Main rotor blade set", 2)),
+    )
+    .await;
     let part1 = id(&p1.body);
-    let p2 = call(app.clone(), Method::POST, "/api/parts", Some(part_json("Tail rotor blades", 4))).await;
+    let p2 = call(
+        app.clone(),
+        Method::POST,
+        "/api/parts",
+        Some(part_json("Tail rotor blades", 4)),
+    )
+    .await;
     let part2 = id(&p2.body);
-    let p3 = call(app.clone(), Method::POST, "/api/parts", Some(part_json("Canopy", 1))).await;
+    let p3 = call(
+        app.clone(),
+        Method::POST,
+        "/api/parts",
+        Some(part_json("Canopy", 1)),
+    )
+    .await;
     let part3 = id(&p3.body);
 
     // link one
@@ -314,7 +499,13 @@ async fn association_link_unlink_replace() {
     .await;
     assert_eq!(res.status, StatusCode::CREATED);
 
-    let res = call(app.clone(), Method::GET, &format!("/api/models/{model_id}"), None).await;
+    let res = call(
+        app.clone(),
+        Method::GET,
+        &format!("/api/models/{model_id}"),
+        None,
+    )
+    .await;
     assert_eq!(res.status, StatusCode::OK);
     let parts = res.body["parts"].as_array().unwrap();
     assert_eq!(parts.len(), 2);
@@ -322,7 +513,10 @@ async fn association_link_unlink_replace() {
         .iter()
         .map(|p| (p["name"].as_str().unwrap(), p["quantity"].as_i64().unwrap()))
         .collect();
-    assert_eq!(by_name["Main rotor blade set"], 2, "linked part carries its quantity");
+    assert_eq!(
+        by_name["Main rotor blade set"], 2,
+        "linked part carries its quantity"
+    );
     assert_eq!(by_name["Tail rotor blades"], 4);
 
     // link to nonexistent part -> 404
@@ -364,14 +558,32 @@ async fn association_link_unlink_replace() {
     )
     .await;
     assert_eq!(res.status, StatusCode::NOT_FOUND);
-    let res = call(app.clone(), Method::GET, &format!("/api/models/{model_id}/parts"), None).await;
+    let res = call(
+        app.clone(),
+        Method::GET,
+        &format!("/api/models/{model_id}/parts"),
+        None,
+    )
+    .await;
     assert_eq!(res.body.as_array().unwrap().len(), 2);
 
     // unlink
-    let res = call(app.clone(), Method::DELETE, &format!("/api/models/{model_id}/parts/{part2}"), None).await;
+    let res = call(
+        app.clone(),
+        Method::DELETE,
+        &format!("/api/models/{model_id}/parts/{part2}"),
+        None,
+    )
+    .await;
     assert_eq!(res.status, StatusCode::NO_CONTENT);
     // unlink again -> 404
-    let res = call(app, Method::DELETE, &format!("/api/models/{model_id}/parts/{part2}"), None).await;
+    let res = call(
+        app,
+        Method::DELETE,
+        &format!("/api/models/{model_id}/parts/{part2}"),
+        None,
+    )
+    .await;
     assert_eq!(res.status, StatusCode::NOT_FOUND);
 }
 
@@ -379,11 +591,29 @@ async fn association_link_unlink_replace() {
 async fn part_reverse_links_and_cascade() {
     let app = app().await;
 
-    let m1 = call(app.clone(), Method::POST, "/api/models", Some(model_json("Kraken 580", "heli"))).await;
+    let m1 = call(
+        app.clone(),
+        Method::POST,
+        "/api/models",
+        Some(model_json("Kraken 580", "heli")),
+    )
+    .await;
     let m1_id = id(&m1.body);
-    let m2 = call(app.clone(), Method::POST, "/api/models", Some(model_json("S500", "heli"))).await;
+    let m2 = call(
+        app.clone(),
+        Method::POST,
+        "/api/models",
+        Some(model_json("S500", "heli")),
+    )
+    .await;
     let m2_id = id(&m2.body);
-    let p = call(app.clone(), Method::POST, "/api/parts", Some(part_json("Shared blades", 9))).await;
+    let p = call(
+        app.clone(),
+        Method::POST,
+        "/api/parts",
+        Some(part_json("Shared blades", 9)),
+    )
+    .await;
     let p_id = id(&p.body);
 
     // link the part to two models via the part-side endpoint
@@ -405,11 +635,16 @@ async fn part_reverse_links_and_cascade() {
     assert_eq!(res.status, StatusCode::CREATED);
 
     // part detail lists both models
-    let res = call(app.clone(), Method::GET, &format!("/api/parts/{p_id}"), None).await;
+    let res = call(
+        app.clone(),
+        Method::GET,
+        &format!("/api/parts/{p_id}"),
+        None,
+    )
+    .await;
     assert_eq!(res.status, StatusCode::OK);
     assert_eq!(res.body["part"]["quantity"], 9);
-    let model_ids: Vec<i64> = res
-        .body["models"]
+    let model_ids: Vec<i64> = res.body["models"]
         .as_array()
         .unwrap()
         .iter()
@@ -424,17 +659,47 @@ async fn part_reverse_links_and_cascade() {
     assert!(row["model_names"].as_str().unwrap().contains("Kraken 580"));
 
     // unlink one side
-    let res = call(app.clone(), Method::DELETE, &format!("/api/parts/{p_id}/models/{m2_id}"), None).await;
+    let res = call(
+        app.clone(),
+        Method::DELETE,
+        &format!("/api/parts/{p_id}/models/{m2_id}"),
+        None,
+    )
+    .await;
     assert_eq!(res.status, StatusCode::NO_CONTENT);
-    let res = call(app.clone(), Method::GET, &format!("/api/parts/{p_id}/models"), None).await;
+    let res = call(
+        app.clone(),
+        Method::GET,
+        &format!("/api/parts/{p_id}/models"),
+        None,
+    )
+    .await;
     assert_eq!(res.body.as_array().unwrap().len(), 1);
 
     // deleting a model cascades: link survives nowhere, part survives
-    let res = call(app.clone(), Method::DELETE, &format!("/api/models/{m1_id}"), None).await;
+    let res = call(
+        app.clone(),
+        Method::DELETE,
+        &format!("/api/models/{m1_id}"),
+        None,
+    )
+    .await;
     assert_eq!(res.status, StatusCode::NO_CONTENT);
-    let res = call(app.clone(), Method::GET, &format!("/api/parts/{p_id}/models"), None).await;
+    let res = call(
+        app.clone(),
+        Method::GET,
+        &format!("/api/parts/{p_id}/models"),
+        None,
+    )
+    .await;
     assert!(res.body.as_array().unwrap().is_empty());
-    let res = call(app.clone(), Method::GET, &format!("/api/parts/{p_id}"), None).await;
+    let res = call(
+        app.clone(),
+        Method::GET,
+        &format!("/api/parts/{p_id}"),
+        None,
+    )
+    .await;
     assert_eq!(res.status, StatusCode::OK);
 
     // deleting the part removes it everywhere
@@ -485,7 +750,13 @@ async fn database_file_is_created_on_disk() {
     };
     let app = hangar::router(state);
 
-    let res = call(app, Method::POST, "/api/models", Some(model_json("Disk Model", "boat"))).await;
+    let res = call(
+        app,
+        Method::POST,
+        "/api/models",
+        Some(model_json("Disk Model", "boat")),
+    )
+    .await;
     assert_eq!(res.status, StatusCode::CREATED);
 
     assert!(

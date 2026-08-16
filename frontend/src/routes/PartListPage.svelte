@@ -27,6 +27,8 @@
   let q = $state('');
   let sort = $state<PartSortParam>('quantity_asc');
   let currency = $state('USD');
+  /** Low-stock settings; `null` until loaded (falls back to server defaults). */
+  let lowStock = $state<{ enabled: boolean; threshold: number } | null>(null);
 
   // -- selection + bulk edit ------------------------------------------------
   let selected = $state<Set<number>>(new Set());
@@ -46,6 +48,8 @@
   let fLink = $state<BulkField>(off());
   let fPhoto = $state<BulkField>(off());
   let fNotes = $state<BulkField>(off());
+  /** '' = skip, 'on' = enable the low badge, 'off' = disable it. */
+  let fLowStock = $state('');
   let bulkLinkModel = $state('');
   let bulkUnlinkModel = $state('');
 
@@ -56,10 +60,13 @@
         q: q.trim() || undefined,
         sort,
       });
-      // Best-effort: settings only affect how the cost is displayed.
+      // Best-effort: settings affect the cost display and the "low" badge.
       api
         .getSettings()
-        .then((s) => (currency = s.currency))
+        .then((s) => {
+          currency = s.currency;
+          lowStock = { enabled: s.low_stock_enabled, threshold: s.low_stock_threshold };
+        })
         .catch(() => {});
     } catch (e) {
       error = errorMessage(e);
@@ -112,6 +119,7 @@
     fLink = off();
     fPhoto = off();
     fNotes = off();
+    fLowStock = '';
     bulkLinkModel = '';
     bulkUnlinkModel = '';
   }
@@ -144,6 +152,7 @@
     if (fLink.on) edit.link = fLink.value.trim() === '' ? null : fLink.value;
     if (fPhoto.on) edit.photo_url = fPhoto.value.trim() === '' ? null : fPhoto.value;
     if (fNotes.on) edit.notes = fNotes.value.trim() === '' ? null : fNotes.value;
+    if (fLowStock !== '') edit.low_stock_enabled = fLowStock === 'on';
     if (bulkLinkModel !== '') edit.model_id = Number(bulkLinkModel);
     if (bulkUnlinkModel !== '') edit.unlink_model_ids = [Number(bulkUnlinkModel)];
     bulkSaving = true;
@@ -184,6 +193,13 @@
 
   const modelNames = (p: Part): string =>
     p.model_names ? p.model_names.split('|').join(', ') : '';
+
+  /** "Low" badge: globally enabled, enabled on this part, and qty <= threshold. */
+  const isLow = (p: Part): boolean =>
+    p.quantity > 0 &&
+    (lowStock?.enabled ?? true) &&
+    p.low_stock_enabled &&
+    p.quantity <= (lowStock?.threshold ?? 2);
 </script>
 
 <div class="mb-4 flex flex-wrap items-center gap-2">
@@ -344,6 +360,21 @@
         />
       </label>
       <div class="flex items-center gap-2">
+        <span class="w-16 shrink-0 whitespace-nowrap text-xs font-semibold uppercase tracking-wide text-stone-500"
+          >Low stock</span
+        >
+        <select
+          class="input"
+          value={fLowStock}
+          onchange={(e) => (fLowStock = e.currentTarget.value)}
+          aria-label="Low stock warning for all selected parts"
+        >
+          <option value="">no change</option>
+          <option value="on">warn when low</option>
+          <option value="off">no warning</option>
+        </select>
+      </div>
+      <div class="flex items-center gap-2">
         <span class="w-16 shrink-0 text-xs font-semibold uppercase tracking-wide text-stone-500"
           >Link to</span
         >
@@ -467,7 +498,7 @@
                   <QuantityStepper qty={p.quantity} onAdjust={(d) => adjustQty(p, d)} />
                   {#if p.quantity === 0}
                     <span class="rounded bg-rose-100 px-1.5 py-0.5 text-xs font-semibold text-rose-700">out</span>
-                  {:else if p.quantity <= 2}
+                  {:else if isLow(p)}
                     <span class="rounded bg-amber-100 px-1.5 py-0.5 text-xs font-semibold text-amber-700">low</span>
                   {/if}
                 </div>

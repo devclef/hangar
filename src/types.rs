@@ -170,6 +170,9 @@ pub struct Part {
     pub photo_url: Option<String>,
     pub cost: Option<f64>,
     pub vendor: Option<String>,
+    /// Whether the "low quantity" badge may appear for this part. Users
+    /// commonly keep a single spare and opt such parts out.
+    pub low_stock_enabled: bool,
 }
 
 /// A model as returned by list endpoints (includes how many parts are linked).
@@ -212,6 +215,7 @@ pub struct PartListRow {
     pub link: Option<String>,
     pub photo_url: Option<String>,
     pub cost: Option<f64>,
+    pub low_stock_enabled: bool,
     pub vendor: Option<String>,
     pub model_count: i64,
     pub model_names: Option<String>,
@@ -228,6 +232,7 @@ impl PartListRow {
             photo_url: self.photo_url,
             cost: self.cost,
             vendor: self.vendor,
+            low_stock_enabled: self.low_stock_enabled,
         }
     }
 }
@@ -273,6 +278,10 @@ pub struct Settings {
     pub part_form_fields: Vec<PartFormField>,
     /// ISO-4217 currency code used to display part costs (e.g. "USD").
     pub currency: String,
+    /// Globally enable/disable the "low quantity" badge.
+    pub low_stock_enabled: bool,
+    /// A part is "low" when its quantity is at or below this value.
+    pub low_stock_threshold: i32,
 }
 
 impl Default for Settings {
@@ -280,6 +289,8 @@ impl Default for Settings {
         Self {
             part_form_fields: PartFormField::ALL.to_vec(),
             currency: "USD".to_string(),
+            low_stock_enabled: true,
+            low_stock_threshold: 2,
         }
     }
 }
@@ -299,6 +310,11 @@ impl Settings {
             ));
         }
         self.currency = currency;
+        if self.low_stock_threshold < 0 || self.low_stock_threshold > 1000 {
+            return Err(crate::error::DomainError::Invalid(
+                "low_stock_threshold: must be between 0 and 1000".into(),
+            ));
+        }
         Ok(self)
     }
 }
@@ -372,6 +388,14 @@ pub struct PartInput {
     pub cost: Option<f64>,
     #[serde(default)]
     pub vendor: Option<String>,
+    /// Whether the "low quantity" badge may appear for this part.
+    /// Defaults to `true` when omitted.
+    #[serde(default = "default_true")]
+    pub low_stock_enabled: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 impl PartInput {
@@ -482,6 +506,9 @@ pub struct PartBulkEdit {
     pub photo_url: BulkValue<String>,
     #[serde(default)]
     pub notes: BulkValue<String>,
+    /// Whether the "low quantity" badge may appear for each selected part.
+    #[serde(default)]
+    pub low_stock_enabled: BulkValue<bool>,
     /// When present, link this model to every selected part (idempotent).
     #[serde(default)]
     pub model_id: Option<i64>,
@@ -501,6 +528,7 @@ impl PartBulkEdit {
             || self.link.is_present()
             || self.photo_url.is_present()
             || self.notes.is_present()
+            || self.low_stock_enabled.is_present()
     }
 
     /// Trims, dedupes ids, validates bounds, and normalizes strings that
@@ -851,6 +879,7 @@ mod tests {
                 photo_url: None,
                 cost: None,
                 vendor: None,
+                low_stock_enabled: true,
             }
         }
 
@@ -862,6 +891,7 @@ mod tests {
             photo_url: None,
             cost: None,
             vendor: None,
+            low_stock_enabled: true,
         }
         .validate();
         assert!(ok.is_ok());
@@ -884,6 +914,7 @@ mod tests {
                 photo_url: None,
                 cost,
                 vendor: None,
+                low_stock_enabled: true,
             }
         }
 
@@ -913,6 +944,8 @@ mod tests {
                 PartFormField::Notes,
             ],
             currency: "  usd ".into(),
+            low_stock_enabled: true,
+            low_stock_threshold: 2,
         };
         let out = s.validate().unwrap();
         assert_eq!(
@@ -924,8 +957,22 @@ mod tests {
         let bad = Settings {
             part_form_fields: vec![],
             currency: "U.S!".into(),
+            low_stock_enabled: true,
+            low_stock_threshold: 2,
         };
         assert!(bad.validate().is_err());
+
+        // threshold bounds: 0 and 1000 are valid, -1 and 1001 are not
+        let mk = |threshold: i32| Settings {
+            part_form_fields: vec![],
+            currency: "USD".into(),
+            low_stock_enabled: true,
+            low_stock_threshold: threshold,
+        };
+        assert!(mk(0).validate().is_ok());
+        assert!(mk(1000).validate().is_ok());
+        assert!(mk(-1).validate().is_err());
+        assert!(mk(1001).validate().is_err());
     }
 
     #[test]
@@ -954,6 +1001,7 @@ mod tests {
                 link: BulkValue::Skip,
                 photo_url: BulkValue::Skip,
                 notes: BulkValue::Set("   ".into()),
+                low_stock_enabled: BulkValue::Skip,
                 model_id: None,
                 unlink_model_ids: vec![9, 9, 4],
             }

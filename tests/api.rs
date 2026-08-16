@@ -754,6 +754,82 @@ async fn part_cost_and_vendor_roundtrip() {
 }
 
 #[tokio::test]
+async fn low_stock_flag_roundtrip_and_bulk_edit() {
+    let app = app().await;
+
+    // omitted on create -> defaults to enabled
+    let res = call(
+        app.clone(),
+        Method::POST,
+        "/api/parts",
+        Some(part_json("Blades A", 5)),
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::CREATED);
+    let p1 = id(&res.body);
+    assert_eq!(res.body["low_stock_enabled"], true);
+
+    // explicit false is honored, in detail and list rows
+    let mut body = part_json("Blades B", 1);
+    body["low_stock_enabled"] = serde_json::json!(false);
+    let res = call(app.clone(), Method::POST, "/api/parts", Some(body)).await;
+    assert_eq!(res.status, StatusCode::CREATED);
+    let p2 = id(&res.body);
+    assert_eq!(res.body["low_stock_enabled"], false);
+    let res = call(app.clone(), Method::GET, &format!("/api/parts/{p2}"), None).await;
+    assert_eq!(res.body["part"]["low_stock_enabled"], false);
+    let res = call(app.clone(), Method::GET, "/api/parts", None).await;
+    let rows = res.body.as_array().unwrap();
+    let row1 = rows.iter().find(|r| r["id"] == p1).unwrap();
+    let row2 = rows.iter().find(|r| r["id"] == p2).unwrap();
+    assert_eq!(row1["low_stock_enabled"], true);
+    assert_eq!(row2["low_stock_enabled"], false);
+
+    // full-replace update re-enables it
+    let res = call(
+        app.clone(),
+        Method::PUT,
+        &format!("/api/parts/{p2}"),
+        Some(part_json("Blades B", 1)),
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::OK);
+    assert_eq!(res.body["low_stock_enabled"], true);
+
+    // bulk edit: disable on p2 only, leave p1 untouched
+    let res = call(
+        app.clone(),
+        Method::POST,
+        "/api/parts/bulk-edit",
+        Some(serde_json::json!({
+            "part_ids": [p1, p2],
+            "low_stock_enabled": false,
+        })),
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::OK);
+    for row in res.body.as_array().unwrap() {
+        assert_eq!(row["low_stock_enabled"], false);
+    }
+    let res = call(
+        app.clone(),
+        Method::POST,
+        "/api/parts/bulk-edit",
+        Some(serde_json::json!({
+            "part_ids": [p1],
+            "low_stock_enabled": true,
+        })),
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::OK);
+    let rows = res.body.as_array().unwrap();
+    assert_eq!(rows[0]["low_stock_enabled"], true);
+    // p2 stays disabled
+    let res = call(app, Method::GET, &format!("/api/parts/{p2}"), None).await;
+    assert_eq!(res.body["part"]["low_stock_enabled"], false);
+}
+
+#[tokio::test]
 async fn settings_default_and_update() {
     let app = app().await;
 
@@ -771,6 +847,8 @@ async fn settings_default_and_update() {
         vec!["quantity", "cost", "vendor", "link", "photo_url", "notes"]
     );
     assert_eq!(res.body["currency"], "USD");
+    assert_eq!(res.body["low_stock_enabled"], true);
+    assert_eq!(res.body["low_stock_threshold"], 2);
 
     // update: hide some fields, change currency (normalized, dupes collapsed)
     let res = call(
@@ -779,12 +857,16 @@ async fn settings_default_and_update() {
         "/api/settings",
         Some(serde_json::json!({
             "part_form_fields": ["quantity", "cost", "cost"],
-            "currency": "  eur "
+            "currency": "  eur ",
+            "low_stock_enabled": false,
+            "low_stock_threshold": 5
         })),
     )
     .await;
     assert_eq!(res.status, StatusCode::OK);
     assert_eq!(res.body["currency"], "EUR");
+    assert_eq!(res.body["low_stock_enabled"], false);
+    assert_eq!(res.body["low_stock_threshold"], 5);
     let fields: Vec<&str> = res.body["part_form_fields"]
         .as_array()
         .unwrap()
@@ -798,6 +880,8 @@ async fn settings_default_and_update() {
     assert_eq!(res.status, StatusCode::OK);
     assert_eq!(res.body["currency"], "EUR");
     assert_eq!(res.body["part_form_fields"].as_array().unwrap().len(), 2);
+    assert_eq!(res.body["low_stock_enabled"], false);
+    assert_eq!(res.body["low_stock_threshold"], 5);
 }
 
 #[tokio::test]
@@ -833,13 +917,44 @@ async fn settings_validation_errors() {
 
     // a missing required key is a deserialization failure -> 400
     let res = call(
-        app,
+        app.clone(),
         Method::PUT,
         "/api/settings",
         Some(serde_json::json!({ "part_form_fields": [] })),
     )
     .await;
     assert_eq!(res.status, StatusCode::BAD_REQUEST);
+
+    // low_stock_threshold out of range is rejected
+    for threshold in [-1, 1001] {
+        let res = call(
+            app.clone(),
+            Method::PUT,
+            "/api/settings",
+            Some(serde_json::json!({
+                "part_form_fields": [],
+                "currency": "USD",
+                "low_stock_enabled": true,
+                "low_stock_threshold": threshold
+            })),
+        )
+        .await;
+        assert_eq!(res.status, StatusCode::BAD_REQUEST, "threshold {threshold}");
+    }
+    // threshold 0 is valid (low state never appears)
+    let res = call(
+        app,
+        Method::PUT,
+        "/api/settings",
+        Some(serde_json::json!({
+            "part_form_fields": [],
+            "currency": "USD",
+            "low_stock_enabled": true,
+            "low_stock_threshold": 0
+        })),
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::OK);
 }
 
 #[tokio::test]

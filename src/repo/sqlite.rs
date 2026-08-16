@@ -145,8 +145,9 @@ impl HangarRepo for SqliteRepo {
 
     async fn create_part(&self, input: &PartInput) -> Result<Part, DomainError> {
         let row = query_as::<_, Part>(
-            "INSERT INTO parts (name, quantity, notes, link, photo_url, cost, vendor) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7) RETURNING *",
+            "INSERT INTO parts (name, quantity, notes, link, photo_url, cost, vendor, \
+                                low_stock_enabled) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8) RETURNING *",
         )
         .bind(&input.name)
         .bind(input.quantity as i32)
@@ -155,6 +156,7 @@ impl HangarRepo for SqliteRepo {
         .bind(&input.photo_url)
         .bind(input.cost)
         .bind(&input.vendor)
+        .bind(input.low_stock_enabled)
         .fetch_one(&self.pool)
         .await?;
         Ok(row)
@@ -163,9 +165,9 @@ impl HangarRepo for SqliteRepo {
     async fn update_part(&self, id: i64, input: &PartInput) -> Result<Option<Part>, DomainError> {
         let row = query_as::<_, Part>(
             "UPDATE parts SET name = ?1, quantity = ?2, notes = ?3, link = ?4, \
-              photo_url = ?5, cost = ?6, vendor = ?7, \
+              photo_url = ?5, cost = ?6, vendor = ?7, low_stock_enabled = ?8, \
               updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') \
-             WHERE id = ?8 RETURNING *",
+             WHERE id = ?9 RETURNING *",
         )
         .bind(&input.name)
         .bind(input.quantity as i32)
@@ -174,6 +176,7 @@ impl HangarRepo for SqliteRepo {
         .bind(&input.photo_url)
         .bind(input.cost)
         .bind(&input.vendor)
+        .bind(input.low_stock_enabled)
         .bind(id)
         .fetch_optional(&self.pool)
         .await?;
@@ -248,6 +251,10 @@ impl HangarRepo for SqliteRepo {
             if input.notes.is_present() {
                 qb.push(", notes = ");
                 qb.push_bind(input.notes.as_value().cloned());
+            }
+            if input.low_stock_enabled.is_present() {
+                qb.push(", low_stock_enabled = ");
+                qb.push_bind(input.low_stock_enabled.as_value().copied());
             }
             qb.push(" WHERE id IN (");
             qb.push_values(part_ids.iter().copied(), |mut w, id| {

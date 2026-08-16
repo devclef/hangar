@@ -17,6 +17,9 @@
   let savingField = $state<PartFormField | null>(null);
   let currencyDraft = $state('');
   let savingCurrency = $state(false);
+  let savingLowStock = $state(false);
+  let thresholdDraft = $state('');
+  let savingThreshold = $state(false);
 
   async function load() {
     error = null;
@@ -24,6 +27,7 @@
       const s = await api.getSettings();
       settings = s;
       currencyDraft = s.currency;
+      thresholdDraft = String(s.low_stock_threshold);
     } catch (e) {
       error = errorMessage(e);
     } finally {
@@ -52,6 +56,8 @@
     const nextSettings: Settings = {
       currency: s.currency,
       part_form_fields: PART_FORM_FIELDS.map((f) => f.key).filter((k) => next.has(k)),
+      low_stock_enabled: s.low_stock_enabled,
+      low_stock_threshold: s.low_stock_threshold,
     };
     savingField = key;
     api
@@ -66,6 +72,43 @@
       .finally(() => {
         savingField = null;
       });
+  }
+
+  async function toggleLowStock() {
+    const s = settings;
+    if (!s || savingLowStock) return;
+    savingLowStock = true;
+    error = null;
+    try {
+      settings = await api.updateSettings({ ...s, low_stock_enabled: !s.low_stock_enabled });
+      flashOk('Low stock setting saved.');
+    } catch (e) {
+      error = errorMessage(e);
+    } finally {
+      savingLowStock = false;
+    }
+  }
+
+  async function saveThreshold() {
+    const s = settings;
+    if (!s || savingThreshold) return;
+    const t = Number(thresholdDraft);
+    if (thresholdDraft.trim() === '' || !Number.isInteger(t) || t < 0 || t > 1000) {
+      error = 'Threshold must be a whole number between 0 and 1000.';
+      return;
+    }
+    if (t === s.low_stock_threshold) return;
+    savingThreshold = true;
+    error = null;
+    try {
+      settings = await api.updateSettings({ ...s, low_stock_threshold: t });
+      thresholdDraft = String(settings.low_stock_threshold);
+      flashOk('Low stock threshold saved.');
+    } catch (e) {
+      error = errorMessage(e);
+    } finally {
+      savingThreshold = false;
+    }
   }
 
   async function saveCurrency() {
@@ -135,6 +178,68 @@
           </li>
         {/each}
       </ul>
+    </div>
+
+    <div class="card mt-6">
+      <div class="border-b border-stone-200 px-5 py-3">
+        <h2 class="text-sm font-semibold uppercase tracking-wide text-stone-600">Low stock</h2>
+        <p class="mt-1 text-xs text-stone-400">
+          Parts at or below the threshold show an amber "low" badge in the parts list. Individual
+          parts can opt out on their edit page.
+        </p>
+      </div>
+      <div class="flex items-center justify-between gap-3 border-b border-stone-100 px-5 py-3">
+        <div class="min-w-0">
+          <span class="block text-sm font-medium text-stone-800">Low stock warnings</span>
+          <span class="block truncate text-xs text-stone-400">
+            Turn off to never flag parts as low
+          </span>
+        </div>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={settings.low_stock_enabled}
+          aria-label="Toggle low stock warnings"
+          disabled={savingLowStock}
+          class="relative h-5 w-9 shrink-0 rounded-full transition-colors {settings.low_stock_enabled
+            ? 'bg-zinc-900'
+            : 'bg-stone-300'} disabled:opacity-40"
+          onclick={toggleLowStock}
+        >
+          <span
+            class="absolute top-0.5 left-0.5 h-3.5 w-3.5 rounded-full bg-white shadow transition-transform {settings.low_stock_enabled
+              ? 'translate-x-4'
+              : 'translate-x-0'}"
+          ></span>
+        </button>
+      </div>
+      <div class="flex items-end gap-3 px-5 py-4">
+        <div class="w-32">
+          <label class="label" for="low-threshold">Threshold</label>
+          <input
+            id="low-threshold"
+            class="input"
+            type="number"
+            min="0"
+            max="1000"
+            step="1"
+            bind:value={thresholdDraft}
+            onkeydown={(e) => e.key === 'Enter' && void saveThreshold()}
+          />
+        </div>
+        <button
+          type="button"
+          class="btn-primary"
+          disabled={savingThreshold || Number(thresholdDraft) === settings.low_stock_threshold}
+          onclick={() => void saveThreshold()}
+        >
+          {savingThreshold ? 'Saving…' : 'Save'}
+        </button>
+      </div>
+      <p class="px-5 pb-4 text-xs text-stone-400">
+        A part is "low" when its quantity is at or below this value. Set to 0 to never flag parts
+        as low (out-of-stock is always shown).
+      </p>
     </div>
 
     <div class="card mt-6">

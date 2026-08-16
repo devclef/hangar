@@ -92,8 +92,8 @@ All endpoints are under `/api` and use JSON. Errors have the shape
 | Method | Path                       | Description |
 | ------ | -------------------------- | ----------- |
 | GET    | `/api/parts`               | List parts. Query params: `q` (name/notes/link substring), `sort` (`quantity_asc` default-friendly, `quantity_desc`, `name_asc`, `name_desc`, `recent`). Each row includes `model_count` and `model_names`. |
-| POST   | `/api/parts`               | Create a part. Body: `name`*, `quantity`* (≥ 0), `notes?`, `link?` (URL or SKU), `photo_url?`, `cost?` (≥ 0, per unit in the configured currency), `vendor?`. Returns 201. |
-| POST   | `/api/parts/bulk-edit`     | Bulk-update several parts in one transaction. Body: `part_ids`* (1–500, dupes collapse) plus any of `quantity`, `cost`, `vendor`, `link`, `photo_url`, `notes` — each **tri-state**: omitted keeps the value, `null` clears it, a value overwrites it — and `model_id` (link this model to every selected part, idempotent) / `unlink_model_ids` (unlink these models; absent links are no-ops). 404 if any part or model id is unknown, 400 when there is nothing to change. Returns the updated rows. |
+| POST   | `/api/parts`               | Create a part. Body: `name`*, `quantity`* (≥ 0), `notes?`, `link?` (URL or SKU), `photo_url?`, `cost?` (≥ 0, per unit in the configured currency), `vendor?`, `low_stock_enabled?` (default `true`; `false` opts this part out of the "low" quantity badge). Returns 201. |
+| POST   | `/api/parts/bulk-edit`     | Bulk-update several parts in one transaction. Body: `part_ids`* (1–500, dupes collapse) plus any of `quantity`, `cost`, `vendor`, `link`, `photo_url`, `notes`, `low_stock_enabled` — each **tri-state**: omitted keeps the value, `null` clears it, a value overwrites it — and `model_id` (link this model to every selected part, idempotent) / `unlink_model_ids` (unlink these models; absent links are no-ops). 404 if any part or model id is unknown, 400 when there is nothing to change. Returns the updated rows. |
 | GET    | `/api/parts/:id`           | Part detail: `{part, models[]}` — all compatible models. |
 | PUT    | `/api/parts/:id`           | Full replace update (same body as create). |
 | DELETE | `/api/parts/:id`           | Delete part (unlinked from all models). |
@@ -119,8 +119,8 @@ and cascade when their part or model is deleted.
 
 | Method | Path           | Description |
 | ------ | -------------- | ----------- |
-| GET    | `/api/settings`| Current settings. Returns `{"part_form_fields": [...], "currency": "USD"}` — the defaults (all fields, USD) when nothing is stored yet. |
-| PUT    | `/api/settings`| Full replace of the settings document (same shape as GET). `part_form_fields` is a list drawn from `quantity, cost, vendor, link, photo_url, notes` (duplicates collapsed, unknown values are a 400). `currency` is an ISO-4217 code, normalized to uppercase (3-8 alphanumeric characters). |
+| GET    | `/api/settings`| Current settings. Returns `{"part_form_fields": [...], "currency": "USD", "low_stock_enabled": true, "low_stock_threshold": 2}` — the defaults (all fields, USD, low stock on at 2) when nothing is stored yet. |
+| PUT    | `/api/settings`| Full replace of the settings document (same shape as GET). `part_form_fields` is a list drawn from `quantity, cost, vendor, link, photo_url, notes` (duplicates collapsed, unknown values are a 400). `currency` is an ISO-4217 code, normalized to uppercase (3-8 alphanumeric characters). `low_stock_enabled` globally switches the "low" quantity badge on/off; `low_stock_threshold` (0–1000) is the quantity at or below which a part counts as "low". |
 
 Example — the question this app exists for:
 

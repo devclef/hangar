@@ -13,6 +13,8 @@
   const DEFAULT_SETTINGS: Settings = {
     part_form_fields: PART_FORM_FIELDS.map((f) => f.key),
     currency: 'USD',
+    low_stock_enabled: true,
+    low_stock_threshold: 2,
   };
 
   let { id }: { id?: number } = $props();
@@ -25,6 +27,7 @@
   let notes = $state('');
   let link = $state('');
   let photoUrl = $state('');
+  let lowStockEnabled = $state(true);
   let settings = $state<Settings>(DEFAULT_SETTINGS);
   let settingsLoaded = $state(false);
   let loading = $state(id !== undefined);
@@ -65,6 +68,7 @@
         notes = p.notes ?? '';
         link = p.link ?? '';
         photoUrl = p.photo_url ?? '';
+        lowStockEnabled = p.low_stock_enabled;
         loading = false;
       })
       .catch((e) => {
@@ -113,6 +117,7 @@
       notes: notes.trim() || null,
       link: link.trim() || null,
       photo_url: photoUrl.trim() || null,
+      low_stock_enabled: lowStockEnabled,
     };
     try {
       const saved = editing ? await api.updatePart(id!, input) : await api.createPart(input);
@@ -154,6 +159,21 @@
         <label class="label" for="p-name">Name *</label>
         <input id="p-name" class="input" bind:value={name} placeholder="Main rotor blade set" />
       </div>
+
+      <label class="flex items-start gap-2">
+        <input
+          type="checkbox"
+          class="mt-0.5 size-4 shrink-0 accent-zinc-900"
+          bind:checked={lowStockEnabled}
+        />
+        <span class="text-sm">
+          <span class="font-medium text-stone-800">Low stock warning</span>
+          <span class="block text-xs text-stone-400">
+            Flag this part as "low" when its quantity drops to the threshold
+            (Settings). Turn off for parts you intentionally keep at one spare.
+          </span>
+        </span>
+      </label>
 
       {#if enabled.has('quantity')}
         <div>

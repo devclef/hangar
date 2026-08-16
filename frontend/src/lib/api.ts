@@ -25,6 +25,8 @@ export interface Part {
   photo_url: string | null;
   cost: number | null;
   vendor: string | null;
+  /** Whether the "low" quantity badge may appear for this part. */
+  low_stock_enabled: boolean;
   model_count?: number;
   /** '|' joined names of linked models, null when none. */
   model_names?: string | null;
@@ -48,6 +50,8 @@ export interface PartInput {
   photo_url: string | null;
   cost: number | null;
   vendor: string | null;
+  /** Whether the "low" quantity badge may appear for this part. Defaults to true. */
+  low_stock_enabled?: boolean;
 }
 
 export interface ModelDetail {
@@ -86,6 +90,8 @@ export interface PartBulkEdit {
   link?: string | null;
   photo_url?: string | null;
   notes?: string | null;
+  /** Enable/disable the "low" quantity badge on every selected part. */
+  low_stock_enabled?: boolean | null;
   /** Link this model to every selected part (idempotent). */
   model_id?: number;
   /** Unlink these models from every selected part (absent links are a no-op). */
@@ -113,6 +119,10 @@ export interface Settings {
   part_form_fields: PartFormField[];
   /** ISO-4217 code (e.g. "USD") used to display part costs. */
   currency: string;
+  /** Globally enable/disable the "low quantity" badge. */
+  low_stock_enabled: boolean;
+  /** A part is "low" when its quantity is at or below this value. */
+  low_stock_threshold: number;
 }
 
 /** Labels for the toggleable part fields, in the order the form lays them out. */

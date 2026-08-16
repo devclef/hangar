@@ -118,6 +118,41 @@ impl std::str::FromStr for ModelStatus {
 
 sqlx_enum!(ModelStatus);
 
+/// UI color theme. `System` follows the OS preference.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Theme {
+    System,
+    Light,
+    Dark,
+}
+
+impl fmt::Display for Theme {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Theme::System => "system",
+            Theme::Light => "light",
+            Theme::Dark => "dark",
+        })
+    }
+}
+
+impl std::str::FromStr for Theme {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "system" => Ok(Theme::System),
+            "light" => Ok(Theme::Light),
+            "dark" => Ok(Theme::Dark),
+            other => Err(format!(
+                "unknown theme `{other}` (expected system, light, or dark)"
+            )),
+        }
+    }
+}
+
+sqlx_enum!(Theme);
+
 /// A part field the user may choose to show or hide on the "add part" form.
 /// The serialized name matches the `parts` column, so the wire value and the
 /// database column line up.
@@ -282,6 +317,8 @@ pub struct Settings {
     pub low_stock_enabled: bool,
     /// A part is "low" when its quantity is at or below this value.
     pub low_stock_threshold: i32,
+    /// UI color theme; `system` follows the OS preference.
+    pub theme: Theme,
 }
 
 impl Default for Settings {
@@ -291,6 +328,7 @@ impl Default for Settings {
             currency: "USD".to_string(),
             low_stock_enabled: true,
             low_stock_threshold: 2,
+            theme: Theme::System,
         }
     }
 }
@@ -936,6 +974,7 @@ mod tests {
         let defaults = Settings::default();
         assert_eq!(defaults.part_form_fields, PartFormField::ALL.to_vec());
         assert_eq!(defaults.currency, "USD");
+        assert_eq!(defaults.theme, Theme::System);
 
         let s = Settings {
             part_form_fields: vec![
@@ -946,8 +985,10 @@ mod tests {
             currency: "  usd ".into(),
             low_stock_enabled: true,
             low_stock_threshold: 2,
+            theme: Theme::Dark,
         };
         let out = s.validate().unwrap();
+        assert_eq!(out.theme, Theme::Dark, "theme passes through untouched");
         assert_eq!(
             out.part_form_fields,
             vec![PartFormField::Cost, PartFormField::Notes]
@@ -959,6 +1000,7 @@ mod tests {
             currency: "U.S!".into(),
             low_stock_enabled: true,
             low_stock_threshold: 2,
+            theme: Theme::Light,
         };
         assert!(bad.validate().is_err());
 
@@ -968,6 +1010,7 @@ mod tests {
             currency: "USD".into(),
             low_stock_enabled: true,
             low_stock_threshold: threshold,
+            theme: Theme::System,
         };
         assert!(mk(0).validate().is_ok());
         assert!(mk(1000).validate().is_ok());

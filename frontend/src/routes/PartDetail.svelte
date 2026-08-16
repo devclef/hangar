@@ -130,14 +130,14 @@
 </script>
 
 {#if loading && !detail}
-  <div class="flex items-center justify-center gap-2 py-16 text-sm text-stone-500">
+  <div class="flex items-center justify-center gap-2 py-16 text-sm text-stone-500 dark:text-zinc-400">
     <Spinner /> Loading…
   </div>
 {:else if error && !detail}
   <ErrorBanner message={error} onRetry={load} />
 {:else if detail}
   <div class="mb-4 flex flex-wrap items-center justify-between gap-2">
-    <a href="#/parts" class="text-sm text-stone-500 hover:text-stone-800">← All parts</a>
+    <a href="#/parts" class="text-sm text-stone-500 dark:text-zinc-400 hover:text-stone-800 dark:text-zinc-200 dark:hover:text-zinc-200">← All parts</a>
     <div class="flex gap-2">
       <a class="btn-ghost" href="#/parts/{id}/edit">Edit</a>
       <button type="button" class="btn-danger" disabled={busy} onclick={remove}>Delete</button>
@@ -151,7 +151,7 @@
 
   <div class="card p-5">
     <div class="flex flex-wrap items-center gap-3">
-      <h1 class="text-2xl font-bold text-zinc-900">{detail.part.name}</h1>
+      <h1 class="text-2xl font-bold text-zinc-900 dark:text-zinc-100">{detail.part.name}</h1>
     </div>
     <div class="mt-4 flex flex-wrap items-center gap-x-8 gap-y-3 text-sm">
       <div>
@@ -161,18 +161,18 @@
       {#if detail.part.cost !== null}
         <div>
           <span class="label">Cost</span>
-          <span class="text-stone-700">{formatCurrency(detail.part.cost, currency)}</span>
+          <span class="text-stone-700 dark:text-zinc-300">{formatCurrency(detail.part.cost, currency)}</span>
         </div>
       {/if}
       {#if detail.part.vendor}
         <div>
           <span class="label">Vendor</span>
-          <span class="text-stone-700">{detail.part.vendor}</span>
+          <span class="text-stone-700 dark:text-zinc-300">{detail.part.vendor}</span>
         </div>
       {/if}
       <div>
         <span class="label">Compatible with</span>
-        <span class="text-stone-700">
+        <span class="text-stone-700 dark:text-zinc-300">
           {detail.models.length === 0
             ? 'no models yet'
             : `${detail.models.length} model${detail.models.length === 1 ? '' : 's'}`}
@@ -182,21 +182,21 @@
         <div>
           <span class="label">Link / SKU</span>
           {#if isUrl(detail.part.link)}
-            <a class="text-sky-700 hover:underline" href={detail.part.link} target="_blank" rel="noreferrer">
+            <a class="text-sky-700 dark:text-sky-400 hover:underline" href={detail.part.link} target="_blank" rel="noreferrer">
               {detail.part.link}
             </a>
           {:else}
-            <span class="font-mono text-xs text-stone-700">{detail.part.link}</span>
+            <span class="font-mono text-xs text-stone-700 dark:text-zinc-300">{detail.part.link}</span>
           {/if}
         </div>
       {/if}
     </div>
     {#if detail.part.notes}
-      <p class="mt-3 whitespace-pre-wrap text-sm text-stone-600">{detail.part.notes}</p>
+      <p class="mt-3 whitespace-pre-wrap text-sm text-stone-600 dark:text-zinc-400">{detail.part.notes}</p>
     {/if}
     {#if detail.part.photo_url}
       <img
-        class="mt-4 max-h-72 rounded-md border border-stone-200"
+        class="mt-4 max-h-72 rounded-md border border-stone-200 dark:border-zinc-800"
         src={detail.part.photo_url}
         alt={detail.part.name}
         loading="lazy"
@@ -205,12 +205,12 @@
   </div>
 
   <div class="card mt-6">
-    <div class="border-b border-stone-200 px-4 py-3">
-      <h2 class="text-sm font-semibold uppercase tracking-wide text-stone-600">
-        Compatible models <span class="font-normal normal-case text-stone-400">({detail.models.length})</span>
+    <div class="border-b border-stone-200 dark:border-zinc-800 px-4 py-3">
+      <h2 class="text-sm font-semibold uppercase tracking-wide text-stone-600 dark:text-zinc-400">
+        Compatible models <span class="font-normal normal-case text-stone-400 dark:text-zinc-500">({detail.models.length})</span>
       </h2>
     </div>
-    <div class="flex flex-wrap gap-2 border-b border-stone-100 px-4 py-3">
+    <div class="flex flex-wrap gap-2 border-b border-stone-100 dark:border-zinc-800 px-4 py-3">
       <select
         class="input max-w-xs"
         bind:value={linkSelection}
@@ -229,13 +229,13 @@
     </div>
 
     {#if detail.models.length === 0}
-      <div class="px-4 py-12 text-center text-sm text-stone-500">
+      <div class="px-4 py-12 text-center text-sm text-stone-500 dark:text-zinc-400">
         This part is not linked to any model yet.
       </div>
     {:else}
       <div class="overflow-x-auto">
         <table class="w-full min-w-[36rem]">
-          <thead class="border-b border-stone-100 bg-stone-50">
+          <thead class="border-b border-stone-100 dark:border-zinc-800 bg-stone-50 dark:bg-zinc-900/70">
             <tr>
               <th class="th">Model</th>
               <th class="th">Category</th>
@@ -243,18 +243,18 @@
               <th class="th w-12"></th>
             </tr>
           </thead>
-          <tbody class="divide-y divide-stone-100">
+          <tbody class="divide-y divide-stone-100 dark:divide-zinc-800">
             {#each detail.models as m (m.id)}
-              <tr class="transition-colors hover:bg-stone-50">
+              <tr class="transition-colors hover:bg-stone-50 dark:bg-zinc-900/70 dark:hover:bg-zinc-800/60">
                 <td class="td">
-                  <a class="font-medium text-zinc-900 hover:underline" href="#/models/{m.id}">{m.name}</a>
+                  <a class="font-medium text-zinc-900 dark:text-zinc-100 hover:underline" href="#/models/{m.id}">{m.name}</a>
                 </td>
                 <td class="td"><CategoryBadge category={m.category} /></td>
-                <td class="td text-stone-600">{m.manufacturer ?? '—'}</td>
+                <td class="td text-stone-600 dark:text-zinc-400">{m.manufacturer ?? '—'}</td>
                 <td class="td text-right">
                   <button
                     type="button"
-                    class="text-stone-400 transition-colors hover:text-rose-600 disabled:opacity-40"
+                    class="text-stone-400 dark:text-zinc-500 transition-colors hover:text-rose-600 dark:text-rose-400 dark:hover:text-rose-400 disabled:opacity-40"
                     disabled={busy}
                     title="Unlink this model"
                     aria-label="Unlink model"
@@ -270,12 +270,12 @@
   </div>
 
   <div class="card mt-6">
-    <div class="border-b border-stone-200 px-4 py-3">
-      <h2 class="text-sm font-semibold uppercase tracking-wide text-stone-600">
-        Recent usage <span class="font-normal normal-case text-stone-400">({usage.length})</span>
+    <div class="border-b border-stone-200 dark:border-zinc-800 px-4 py-3">
+      <h2 class="text-sm font-semibold uppercase tracking-wide text-stone-600 dark:text-zinc-400">
+        Recent usage <span class="font-normal normal-case text-stone-400 dark:text-zinc-500">({usage.length})</span>
       </h2>
     </div>
-    <div class="border-b border-stone-100 px-4 py-3">
+    <div class="border-b border-stone-100 dark:border-zinc-800 px-4 py-3">
       <LogUsageForm part={detail.part} models={allModels} onLogged={afterLogged} />
     </div>
     <UsageLog

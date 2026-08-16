@@ -58,15 +58,15 @@
 </script>
 
 {#if loading && records.length === 0}
-  <div class="flex items-center justify-center gap-2 py-16 text-sm text-stone-500">
+  <div class="flex items-center justify-center gap-2 py-16 text-sm text-stone-500 dark:text-zinc-400">
     <Spinner /> Loading…
   </div>
 {:else if error && records.length === 0}
   <ErrorBanner message={error} onRetry={load} />
 {:else}
   <div class="mb-4 flex flex-wrap items-center justify-between gap-2">
-    <h1 class="text-2xl font-bold text-zinc-900">Usage log</h1>
-    <span class="text-sm text-stone-500">
+    <h1 class="text-2xl font-bold text-zinc-900 dark:text-zinc-100">Usage log</h1>
+    <span class="text-sm text-stone-500 dark:text-zinc-400">
       {records.length} entr{records.length === 1 ? 'y' : 'ies'}
     </span>
   </div>
@@ -80,8 +80,8 @@
   </div>
 
   <div class="card mt-6">
-    <div class="flex flex-wrap items-center justify-between gap-2 border-b border-stone-200 px-4 py-3">
-      <h2 class="text-sm font-semibold uppercase tracking-wide text-stone-600">
+    <div class="flex flex-wrap items-center justify-between gap-2 border-b border-stone-200 dark:border-zinc-800 px-4 py-3">
+      <h2 class="text-sm font-semibold uppercase tracking-wide text-stone-600 dark:text-zinc-400">
         History
       </h2>
       <div class="flex flex-wrap items-center gap-2">

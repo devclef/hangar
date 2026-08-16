@@ -1,7 +1,7 @@
 <script lang="ts">
 </script>
 <svg
-  class="h-4 w-4 animate-spin text-stone-400"
+  class="h-4 w-4 animate-spin text-stone-400 dark:text-zinc-500"
   viewBox="0 0 24 24"
   fill="none"
   aria-hidden="true"

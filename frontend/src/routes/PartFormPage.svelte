@@ -15,6 +15,7 @@
     currency: 'USD',
     low_stock_enabled: true,
     low_stock_threshold: 2,
+    theme: 'system',
   };
 
   let { id }: { id?: number } = $props();
@@ -132,15 +133,15 @@
 <div class="mx-auto max-w-xl">
   <div class="mb-4 flex items-center justify-between">
     <a
-      class="text-sm text-stone-500 hover:text-stone-800"
+      class="text-sm text-stone-500 dark:text-zinc-400 hover:text-stone-800 dark:text-zinc-200 dark:hover:text-zinc-200"
       href={editing ? `#/parts/${id}` : '#/parts'}
     >← Back</a>
   </div>
 
   {#if loading || !settingsLoaded}
-    <div class="card p-10 text-center text-sm text-stone-500">Loading…</div>
+    <div class="card p-10 text-center text-sm text-stone-500 dark:text-zinc-400">Loading…</div>
   {:else}
-    <h1 class="mb-4 text-xl font-bold text-zinc-900">
+    <h1 class="mb-4 text-xl font-bold text-zinc-900 dark:text-zinc-100">
       {editing ? `Edit: ${name || 'part'}` : 'Add part'}
     </h1>
 
@@ -163,12 +164,12 @@
       <label class="flex items-start gap-2">
         <input
           type="checkbox"
-          class="mt-0.5 size-4 shrink-0 accent-zinc-900"
+          class="mt-0.5 size-4 shrink-0 accent-zinc-900 dark:accent-amber-400"
           bind:checked={lowStockEnabled}
         />
         <span class="text-sm">
-          <span class="font-medium text-stone-800">Low stock warning</span>
-          <span class="block text-xs text-stone-400">
+          <span class="font-medium text-stone-800 dark:text-zinc-200">Low stock warning</span>
+          <span class="block text-xs text-stone-400 dark:text-zinc-500">
             Flag this part as "low" when its quantity drops to the threshold
             (Settings). Turn off for parts you intentionally keep at one spare.
           </span>

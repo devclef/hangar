@@ -81,15 +81,15 @@
 <div class="mx-auto max-w-xl">
   <div class="mb-4 flex items-center justify-between">
     <a
-      class="text-sm text-stone-500 hover:text-stone-800"
+      class="text-sm text-stone-500 dark:text-zinc-400 hover:text-stone-800 dark:text-zinc-200 dark:hover:text-zinc-200"
       href={editing ? `#/models/${id}` : '#/models'}
     >← Back</a>
   </div>
 
   {#if loading}
-    <div class="card p-10 text-center text-sm text-stone-500">Loading…</div>
+    <div class="card p-10 text-center text-sm text-stone-500 dark:text-zinc-400">Loading…</div>
   {:else}
-    <h1 class="mb-4 text-xl font-bold text-zinc-900">
+    <h1 class="mb-4 text-xl font-bold text-zinc-900 dark:text-zinc-100">
       {editing ? `Edit: ${name || 'model'}` : 'Add model'}
     </h1>
 

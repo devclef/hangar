@@ -117,7 +117,7 @@
 
 <Flash message={flash} />
 {#if formError}
-  <p class="mb-2 text-sm text-rose-700" role="alert">{formError}</p>
+  <p class="mb-2 text-sm text-rose-700 dark:text-rose-400" role="alert">{formError}</p>
 {/if}
 <div class="flex flex-wrap items-center gap-2">
   {#if part === undefined}
@@ -136,8 +136,8 @@
       {/if}
     </select>
   {:else}
-    <span class="text-sm text-stone-500">
-      Part: <span class="font-medium text-zinc-900">{part.name}</span>
+    <span class="text-sm text-stone-500 dark:text-zinc-400">
+      Part: <span class="font-medium text-zinc-900 dark:text-zinc-100">{part.name}</span>
     </span>
   {/if}
 
@@ -154,12 +154,12 @@
       {/each}
     </select>
   {:else}
-    <span class="text-sm text-stone-500">
-      Used on: <span class="font-medium text-zinc-900">{model.name}</span>
+    <span class="text-sm text-stone-500 dark:text-zinc-400">
+      Used on: <span class="font-medium text-zinc-900 dark:text-zinc-100">{model.name}</span>
     </span>
   {/if}
 
-  <label class="flex items-center gap-1.5 text-sm text-stone-600">
+  <label class="flex items-center gap-1.5 text-sm text-stone-600 dark:text-zinc-400">
     Qty
     <input
       type="number"

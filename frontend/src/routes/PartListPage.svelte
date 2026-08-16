@@ -226,7 +226,7 @@
 {#if selected.size > 0}
   <div class="card mb-3 p-4">
     <div class="flex flex-wrap items-center gap-2">
-      <span class="text-sm font-semibold text-zinc-900">
+      <span class="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
         Bulk edit — {selected.size} part{selected.size === 1 ? '' : 's'}
       </span>
       <button
@@ -237,18 +237,18 @@
         Clear selection
       </button>
     </div>
-    <p class="mt-1 text-xs text-stone-500">
+    <p class="mt-1 text-xs text-stone-500 dark:text-zinc-400">
       Check a field to apply it to every selected part; an empty value clears the field.
     </p>
     <div class="mt-3 grid gap-x-6 gap-y-2 sm:grid-cols-2 lg:grid-cols-3">
       <label class="flex items-center gap-2">
         <input
           type="checkbox"
-          class="size-4 shrink-0 accent-zinc-900"
+          class="size-4 shrink-0 accent-zinc-900 dark:accent-amber-400"
           checked={fQuantity.on}
           onchange={(e) => (fQuantity = { ...fQuantity, on: e.currentTarget.checked })}
         />
-        <span class="w-16 shrink-0 text-xs font-semibold uppercase tracking-wide text-stone-500"
+        <span class="w-16 shrink-0 text-xs font-semibold uppercase tracking-wide text-stone-500 dark:text-zinc-400"
           >Qty</span
         >
         <input
@@ -265,11 +265,11 @@
       <label class="flex items-center gap-2">
         <input
           type="checkbox"
-          class="size-4 shrink-0 accent-zinc-900"
+          class="size-4 shrink-0 accent-zinc-900 dark:accent-amber-400"
           checked={fCost.on}
           onchange={(e) => (fCost = { ...fCost, on: e.currentTarget.checked })}
         />
-        <span class="w-16 shrink-0 text-xs font-semibold uppercase tracking-wide text-stone-500"
+        <span class="w-16 shrink-0 text-xs font-semibold uppercase tracking-wide text-stone-500 dark:text-zinc-400"
           >Cost</span
         >
         <input
@@ -286,11 +286,11 @@
       <label class="flex items-center gap-2">
         <input
           type="checkbox"
-          class="size-4 shrink-0 accent-zinc-900"
+          class="size-4 shrink-0 accent-zinc-900 dark:accent-amber-400"
           checked={fVendor.on}
           onchange={(e) => (fVendor = { ...fVendor, on: e.currentTarget.checked })}
         />
-        <span class="w-16 shrink-0 text-xs font-semibold uppercase tracking-wide text-stone-500"
+        <span class="w-16 shrink-0 text-xs font-semibold uppercase tracking-wide text-stone-500 dark:text-zinc-400"
           >Vendor</span
         >
         <input
@@ -305,11 +305,11 @@
       <label class="flex items-center gap-2">
         <input
           type="checkbox"
-          class="size-4 shrink-0 accent-zinc-900"
+          class="size-4 shrink-0 accent-zinc-900 dark:accent-amber-400"
           checked={fLink.on}
           onchange={(e) => (fLink = { ...fLink, on: e.currentTarget.checked })}
         />
-        <span class="w-16 shrink-0 text-xs font-semibold uppercase tracking-wide text-stone-500"
+        <span class="w-16 shrink-0 text-xs font-semibold uppercase tracking-wide text-stone-500 dark:text-zinc-400"
           >Link</span
         >
         <input
@@ -324,11 +324,11 @@
       <label class="flex items-center gap-2">
         <input
           type="checkbox"
-          class="size-4 shrink-0 accent-zinc-900"
+          class="size-4 shrink-0 accent-zinc-900 dark:accent-amber-400"
           checked={fPhoto.on}
           onchange={(e) => (fPhoto = { ...fPhoto, on: e.currentTarget.checked })}
         />
-        <span class="w-16 shrink-0 text-xs font-semibold uppercase tracking-wide text-stone-500"
+        <span class="w-16 shrink-0 text-xs font-semibold uppercase tracking-wide text-stone-500 dark:text-zinc-400"
           >Photo</span
         >
         <input
@@ -343,11 +343,11 @@
       <label class="flex items-center gap-2">
         <input
           type="checkbox"
-          class="size-4 shrink-0 accent-zinc-900"
+          class="size-4 shrink-0 accent-zinc-900 dark:accent-amber-400"
           checked={fNotes.on}
           onchange={(e) => (fNotes = { ...fNotes, on: e.currentTarget.checked })}
         />
-        <span class="w-16 shrink-0 text-xs font-semibold uppercase tracking-wide text-stone-500"
+        <span class="w-16 shrink-0 text-xs font-semibold uppercase tracking-wide text-stone-500 dark:text-zinc-400"
           >Notes</span
         >
         <input
@@ -360,7 +360,7 @@
         />
       </label>
       <div class="flex items-center gap-2">
-        <span class="w-16 shrink-0 whitespace-nowrap text-xs font-semibold uppercase tracking-wide text-stone-500"
+        <span class="w-16 shrink-0 whitespace-nowrap text-xs font-semibold uppercase tracking-wide text-stone-500 dark:text-zinc-400"
           >Low stock</span
         >
         <select
@@ -375,7 +375,7 @@
         </select>
       </div>
       <div class="flex items-center gap-2">
-        <span class="w-16 shrink-0 text-xs font-semibold uppercase tracking-wide text-stone-500"
+        <span class="w-16 shrink-0 text-xs font-semibold uppercase tracking-wide text-stone-500 dark:text-zinc-400"
           >Link to</span
         >
         <select
@@ -391,7 +391,7 @@
         </select>
       </div>
       <div class="flex items-center gap-2">
-        <span class="w-16 shrink-0 text-xs font-semibold uppercase tracking-wide text-stone-500"
+        <span class="w-16 shrink-0 text-xs font-semibold uppercase tracking-wide text-stone-500 dark:text-zinc-400"
           >Unlink</span
         >
         <select
@@ -426,7 +426,7 @@
 
 <div class="card overflow-hidden">
   {#if loading && parts.length === 0}
-    <div class="flex items-center justify-center gap-2 py-16 text-sm text-stone-500">
+    <div class="flex items-center justify-center gap-2 py-16 text-sm text-stone-500 dark:text-zinc-400">
       <Spinner /> Loading…
     </div>
   {:else if parts.length === 0 && !error}
@@ -439,12 +439,12 @@
   {:else}
     <div class="overflow-x-auto">
       <table class="w-full min-w-[56rem]">
-        <thead class="border-b border-stone-200 bg-stone-50">
+        <thead class="border-b border-stone-200 dark:border-zinc-800 bg-stone-50 dark:bg-zinc-900/70">
           <tr>
             <th class="th w-10">
               <input
                 type="checkbox"
-                class="size-4 accent-zinc-900"
+                class="size-4 accent-zinc-900 dark:accent-amber-400"
                 aria-label="Select all parts"
                 checked={parts.length > 0 && selected.size === parts.length}
                 onchange={toggleSelectAll}
@@ -459,71 +459,71 @@
             <th class="th w-24"></th>
           </tr>
         </thead>
-        <tbody class="divide-y divide-stone-100">
+        <tbody class="divide-y divide-stone-100 dark:divide-zinc-800">
           {#each parts as p (p.id)}
             <tr
-              class="transition-colors hover:bg-stone-50 {selected.has(p.id) ? 'bg-stone-50' : ''}"
+              class="transition-colors hover:bg-stone-50 dark:bg-zinc-900/70 dark:hover:bg-zinc-800/60 {selected.has(p.id) ? 'bg-stone-50 dark:bg-zinc-900/70' : ''}"
             >
               <td class="td w-10">
                 <input
                   type="checkbox"
-                  class="size-4 accent-zinc-900"
+                  class="size-4 accent-zinc-900 dark:accent-amber-400"
                   aria-label="Select {p.name}"
                   checked={selected.has(p.id)}
                   onchange={() => toggleSelect(p.id)}
                 />
               </td>
               <td class="td">
-                <a class="font-medium text-zinc-900 hover:underline" href="#/parts/{p.id}">{p.name}</a>
+                <a class="font-medium text-zinc-900 dark:text-zinc-100 hover:underline" href="#/parts/{p.id}">{p.name}</a>
                 {#if p.notes}
-                  <div class="max-w-56 truncate text-xs text-stone-400" title={p.notes}>{p.notes}</div>
+                  <div class="max-w-56 truncate text-xs text-stone-400 dark:text-zinc-500" title={p.notes}>{p.notes}</div>
                 {/if}
               </td>
-              <td class="td max-w-40 text-stone-600">
+              <td class="td max-w-40 text-stone-600 dark:text-zinc-400">
                 {#if p.vendor}
                   <span class="block truncate" title={p.vendor}>{p.vendor}</span>
                 {:else}
-                  <span class="text-stone-400">—</span>
+                  <span class="text-stone-400 dark:text-zinc-500">—</span>
                 {/if}
               </td>
-              <td class="td text-stone-600">
+              <td class="td text-stone-600 dark:text-zinc-400">
                 {#if p.cost !== null}
                   {formatCurrency(p.cost, currency)}
                 {:else}
-                  <span class="text-stone-400">—</span>
+                  <span class="text-stone-400 dark:text-zinc-500">—</span>
                 {/if}
               </td>
               <td class="td">
                 <div class="flex items-center gap-2">
                   <QuantityStepper qty={p.quantity} onAdjust={(d) => adjustQty(p, d)} />
                   {#if p.quantity === 0}
-                    <span class="rounded bg-rose-100 px-1.5 py-0.5 text-xs font-semibold text-rose-700">out</span>
+                    <span class="rounded bg-rose-100 dark:bg-rose-500/15 px-1.5 py-0.5 text-xs font-semibold text-rose-700 dark:text-rose-400">out</span>
                   {:else if isLow(p)}
-                    <span class="rounded bg-amber-100 px-1.5 py-0.5 text-xs font-semibold text-amber-700">low</span>
+                    <span class="rounded bg-amber-100 dark:bg-amber-500/15 px-1.5 py-0.5 text-xs font-semibold text-amber-700 dark:text-amber-400">low</span>
                   {/if}
                 </div>
               </td>
-              <td class="td text-stone-600">
+              <td class="td text-stone-600 dark:text-zinc-400">
                 {#if p.model_count}
                   <span title={modelNames(p)}>{p.model_count} linked{p.model_count === 1 ? ' model' : ''}</span>
                 {:else}
-                  <span class="text-stone-400">unlinked</span>
+                  <span class="text-stone-400 dark:text-zinc-500">unlinked</span>
                 {/if}
               </td>
               <td class="td max-w-48">
                 {#if p.link}
                   {#if isUrl(p.link)}
                     <a
-                      class="block truncate text-sky-700 hover:underline"
+                      class="block truncate text-sky-700 dark:text-sky-400 hover:underline"
                       href={p.link}
                       target="_blank"
                       rel="noreferrer"
                     >{p.link}</a>
                   {:else}
-                    <span class="block truncate font-mono text-xs text-stone-600" title={p.link}>{p.link}</span>
+                    <span class="block truncate font-mono text-xs text-stone-600 dark:text-zinc-400" title={p.link}>{p.link}</span>
                   {/if}
                 {:else}
-                  <span class="text-stone-400">—</span>
+                  <span class="text-stone-400 dark:text-zinc-500">—</span>
                 {/if}
               </td>
               <td class="td text-right">
@@ -531,7 +531,7 @@
                   <a class="btn-ghost px-2 py-1 text-xs" href="#/parts/{p.id}/edit">Edit</a>
                   <button
                     type="button"
-                    class="btn-ghost px-2 py-1 text-xs text-rose-600 hover:bg-rose-50"
+                    class="btn-ghost px-2 py-1 text-xs text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:bg-rose-500/10 dark:hover:bg-rose-500/10"
                     onclick={() => remove(p)}
                   >Del</button>
                 </div>

@@ -849,6 +849,7 @@ async fn settings_default_and_update() {
     assert_eq!(res.body["currency"], "USD");
     assert_eq!(res.body["low_stock_enabled"], true);
     assert_eq!(res.body["low_stock_threshold"], 2);
+    assert_eq!(res.body["theme"], "system");
 
     // update: hide some fields, change currency (normalized, dupes collapsed)
     let res = call(
@@ -859,7 +860,8 @@ async fn settings_default_and_update() {
             "part_form_fields": ["quantity", "cost", "cost"],
             "currency": "  eur ",
             "low_stock_enabled": false,
-            "low_stock_threshold": 5
+            "low_stock_threshold": 5,
+            "theme": "dark"
         })),
     )
     .await;
@@ -867,6 +869,7 @@ async fn settings_default_and_update() {
     assert_eq!(res.body["currency"], "EUR");
     assert_eq!(res.body["low_stock_enabled"], false);
     assert_eq!(res.body["low_stock_threshold"], 5);
+    assert_eq!(res.body["theme"], "dark");
     let fields: Vec<&str> = res.body["part_form_fields"]
         .as_array()
         .unwrap()
@@ -882,6 +885,7 @@ async fn settings_default_and_update() {
     assert_eq!(res.body["part_form_fields"].as_array().unwrap().len(), 2);
     assert_eq!(res.body["low_stock_enabled"], false);
     assert_eq!(res.body["low_stock_threshold"], 5);
+    assert_eq!(res.body["theme"], "dark");
 }
 
 #[tokio::test]
@@ -895,7 +899,8 @@ async fn settings_validation_errors() {
         "/api/settings",
         Some(serde_json::json!({
             "part_form_fields": ["quantity", "bogus_field"],
-            "currency": "USD"
+            "currency": "USD",
+            "theme": "system"
         })),
     )
     .await;
@@ -909,7 +914,8 @@ async fn settings_validation_errors() {
         "/api/settings",
         Some(serde_json::json!({
             "part_form_fields": [],
-            "currency": "U.S!"
+            "currency": "U.S!",
+            "theme": "system"
         })),
     )
     .await;
@@ -935,13 +941,31 @@ async fn settings_validation_errors() {
                 "part_form_fields": [],
                 "currency": "USD",
                 "low_stock_enabled": true,
-                "low_stock_threshold": threshold
+                "low_stock_threshold": threshold,
+                "theme": "system"
             })),
         )
         .await;
         assert_eq!(res.status, StatusCode::BAD_REQUEST, "threshold {threshold}");
     }
     // threshold 0 is valid (low state never appears)
+    let res = call(
+        app.clone(),
+        Method::PUT,
+        "/api/settings",
+        Some(serde_json::json!({
+            "part_form_fields": [],
+            "currency": "USD",
+            "low_stock_enabled": true,
+            "low_stock_threshold": 0,
+            "theme": "light"
+        })),
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::OK);
+    assert_eq!(res.body["theme"], "light");
+
+    // an unknown theme is rejected
     let res = call(
         app,
         Method::PUT,
@@ -950,11 +974,12 @@ async fn settings_validation_errors() {
             "part_form_fields": [],
             "currency": "USD",
             "low_stock_enabled": true,
-            "low_stock_threshold": 0
+            "low_stock_threshold": 0,
+            "theme": "neon"
         })),
     )
     .await;
-    assert_eq!(res.status, StatusCode::OK);
+    assert_eq!(res.status, StatusCode::BAD_REQUEST);
 }
 
 #[tokio::test]

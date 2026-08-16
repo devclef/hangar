@@ -61,7 +61,7 @@
 
 <div class="card overflow-hidden">
   {#if loading && models.length === 0}
-    <div class="flex items-center justify-center gap-2 py-16 text-sm text-stone-500">
+    <div class="flex items-center justify-center gap-2 py-16 text-sm text-stone-500 dark:text-zinc-400">
       <Spinner /> Loading…
     </div>
   {:else if models.length === 0 && !error}
@@ -74,7 +74,7 @@
   {:else}
     <div class="overflow-x-auto">
       <table class="w-full min-w-[48rem]">
-        <thead class="border-b border-stone-200 bg-stone-50">
+        <thead class="border-b border-stone-200 dark:border-zinc-800 bg-stone-50 dark:bg-zinc-900/70">
           <tr>
             <th class="th">Model</th>
             <th class="th">Category</th>
@@ -84,19 +84,19 @@
             <th class="th text-right">Parts</th>
           </tr>
         </thead>
-        <tbody class="divide-y divide-stone-100">
+        <tbody class="divide-y divide-stone-100 dark:divide-zinc-800">
           {#each models as m (m.id)}
-            <tr class="transition-colors hover:bg-stone-50">
+            <tr class="transition-colors hover:bg-stone-50 dark:bg-zinc-900/70 dark:hover:bg-zinc-800/60">
               <td class="td">
-                <a class="font-medium text-zinc-900 hover:underline" href="#/models/{m.id}">{m.name}</a>
+                <a class="font-medium text-zinc-900 dark:text-zinc-100 hover:underline" href="#/models/{m.id}">{m.name}</a>
               </td>
               <td class="td"><CategoryBadge category={m.category} /></td>
-              <td class="td text-stone-600">{m.manufacturer ?? '—'}</td>
+              <td class="td text-stone-600 dark:text-zinc-400">{m.manufacturer ?? '—'}</td>
               <td class="td"><StatusBadge status={m.status} /></td>
-              <td class="td tabular-nums text-stone-600">{formatDate(m.date_acquired)}</td>
+              <td class="td tabular-nums text-stone-600 dark:text-zinc-400">{formatDate(m.date_acquired)}</td>
               <td class="td text-right">
                 <a
-                  class="inline-flex min-w-7 items-center justify-center rounded-full bg-stone-100 px-2 py-0.5 text-xs font-semibold tabular-nums text-stone-600 hover:bg-stone-200"
+                  class="inline-flex min-w-7 items-center justify-center rounded-full bg-stone-100 dark:bg-zinc-950 px-2 py-0.5 text-xs font-semibold tabular-nums text-stone-600 dark:text-zinc-400 hover:bg-stone-200 dark:bg-zinc-700 dark:hover:bg-zinc-800"
                   href="#/models/{m.id}"
                   title="View linked parts"
                 >{m.part_count ?? 0}</a>

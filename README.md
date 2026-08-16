@@ -119,8 +119,8 @@ and cascade when their part or model is deleted.
 
 | Method | Path           | Description |
 | ------ | -------------- | ----------- |
-| GET    | `/api/settings`| Current settings. Returns `{"part_form_fields": [...], "currency": "USD", "low_stock_enabled": true, "low_stock_threshold": 2}` — the defaults (all fields, USD, low stock on at 2) when nothing is stored yet. |
-| PUT    | `/api/settings`| Full replace of the settings document (same shape as GET). `part_form_fields` is a list drawn from `quantity, cost, vendor, link, photo_url, notes` (duplicates collapsed, unknown values are a 400). `currency` is an ISO-4217 code, normalized to uppercase (3-8 alphanumeric characters). `low_stock_enabled` globally switches the "low" quantity badge on/off; `low_stock_threshold` (0–1000) is the quantity at or below which a part counts as "low". |
+| GET    | `/api/settings`| Current settings. Returns `{"part_form_fields": [...], "currency": "USD", "low_stock_enabled": true, "low_stock_threshold": 2, "theme": "system"}` — the defaults (all fields, USD, low stock on at 2, system theme) when nothing is stored yet. |
+| PUT    | `/api/settings`| Full replace of the settings document (same shape as GET). `part_form_fields` is a list drawn from `quantity, cost, vendor, link, photo_url, notes` (duplicates collapsed, unknown values are a 400). `currency` is an ISO-4217 code, normalized to uppercase (3-8 alphanumeric characters). `low_stock_enabled` globally switches the "low" quantity badge on/off; `low_stock_threshold` (0–1000) is the quantity at or below which a part counts as "low". `theme` is the default color mode: `system` (follow the OS), `light`, or `dark`; the UI's light/dark toggle persists here. |
 
 Example — the question this app exists for:
 
@@ -135,12 +135,12 @@ curl -s localhost:8080/api/models/1
 - `#/models` — list, search, category filter chips, linked-part counts.
 - `#/models/:id` — model detail: all linked parts with quantities (inline +/− stepper), link/unlink parts.
 - `#/models/new`, `#/models/:id/edit` — add/edit forms.
-- `#/parts` — all parts, searchable, sortable (defaults to quantity low→high so out-of-stock floats to the top; 0 shows an "out" badge, ≤2 a "low" badge). Rows are checkbox-selectable; selecting one or more opens a **bulk edit** panel that changes any of the part fields (set or clear) on every selected part at once, and links/unlinks a chosen model across the selection.
+- `#/parts` — all parts, searchable, sortable (defaults to quantity low→high so out-of-stock floats to the top; 0 shows an "out" badge, and at-or-below the configured low-stock threshold a "low" badge). Rows are checkbox-selectable; selecting one or more opens a **bulk edit** panel that changes any of the part fields (set or clear) on every selected part at once, and links/unlinks a chosen model across the selection.
 - `#/parts/:id` — part detail: quantity stepper, compatible models, link/unlink models.
 - `#/parts/new`, `#/parts/:id/edit` — add/edit forms.
 - `#/usage` — usage log: every part used on every model, with when/quantity/notes, filterable by part or model, plus a "log a usage" form.
 - `#/models/:id` and `#/parts/:id` also show a "recent usage" card with an inline log form for that model/part.
-- `#/settings` — pick which fields the part form shows (toggles, saved to the API) and the currency code used to display part costs.
+- `#/settings` — pick which fields the part form shows (toggles, saved to the API), the low-stock badge (global on/off + threshold), the default color theme (system/light/dark; the header's sun/moon button flips light/dark at any time), and the currency code used to display part costs.
 
 ## Decisions & Assumptions
 

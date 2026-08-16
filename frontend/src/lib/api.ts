@@ -115,6 +115,8 @@ export type PartFormField =
   | 'photo_url'
   | 'notes';
 
+export type ThemeMode = 'system' | 'light' | 'dark';
+
 export interface Settings {
   part_form_fields: PartFormField[];
   /** ISO-4217 code (e.g. "USD") used to display part costs. */
@@ -123,6 +125,8 @@ export interface Settings {
   low_stock_enabled: boolean;
   /** A part is "low" when its quantity is at or below this value. */
   low_stock_threshold: number;
+  /** UI color theme; `system` follows the OS preference. */
+  theme: ThemeMode;
 }
 
 /** Labels for the toggleable part fields, in the order the form lays them out. */

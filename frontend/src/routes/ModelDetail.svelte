@@ -253,7 +253,7 @@
       </h2>
     </div>
     <div class="border-b border-stone-100 px-4 py-3">
-      <LogUsageForm model={detail.model} parts={allParts} onLogged={afterLogged} />
+      <LogUsageForm model={detail.model} parts={detail.parts} onLogged={afterLogged} />
     </div>
     <UsageLog
       records={usage}

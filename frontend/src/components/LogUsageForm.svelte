@@ -4,9 +4,11 @@
 
   /**
    * "Log a usage" form. Exactly one side is fixed by the caller:
-   *  - on a model page: `model` is fixed, the user picks the part
+   *  - on a model page: `model` is fixed; the caller must pass `parts`
+   *    scoped to that model's linked parts
    *  - on a part page:  `part` is fixed, the user picks the model
-   *  - on the global log page: neither is fixed
+   *  - on the global log page: neither is fixed; once the user picks a
+   *    model, the part options narrow to that model's linked parts
    */
   let {
     part,
@@ -30,6 +32,43 @@
   let busy = $state(false);
   let formError = $state<string | null>(null);
   let flash = $state<string | null>(null);
+
+  const effectiveModelId = $derived(
+    model !== undefined ? model.id : modelSelection === '' ? null : (modelSelection as number),
+  );
+
+  // In free form (global log page) narrow the part options to the parts
+  // linked to the chosen model; `null` means "no model chosen / lookup
+  // failed", in which case the full `parts` list is shown.
+  let linkedParts = $state<Part[] | null>(null);
+
+  $effect(() => {
+    if (model !== undefined) return; // caller already scoped `parts`
+    const modelId = effectiveModelId;
+    linkedParts = null;
+    if (modelId === null) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const linked = await api.listModelParts(modelId);
+        if (!cancelled) linkedParts = linked;
+      } catch {
+        if (!cancelled) linkedParts = null;
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  });
+
+  const partOptions = $derived(model !== undefined ? parts : (linkedParts ?? parts));
+
+  // Drop a part selection that is no longer linked to the chosen model.
+  $effect(() => {
+    const options = partOptions;
+    if (part !== undefined || partSelection === '') return;
+    if (!options.some((p) => p.id === partSelection)) partSelection = '';
+  });
 
   const ready = $derived(
     (part !== undefined || partSelection !== '') &&
@@ -89,9 +128,12 @@
       aria-label="Part used"
     >
       <option value="" disabled>Part used…</option>
-      {#each parts as p (p.id)}
+      {#each partOptions as p (p.id)}
         <option value={p.id}>{p.name} — {p.quantity} in stock</option>
       {/each}
+      {#if partOptions.length === 0 && effectiveModelId !== null}
+        <option value="" disabled>No parts linked to this model</option>
+      {/if}
     </select>
   {:else}
     <span class="text-sm text-stone-500">

@@ -93,6 +93,7 @@ All endpoints are under `/api` and use JSON. Errors have the shape
 | ------ | -------------------------- | ----------- |
 | GET    | `/api/parts`               | List parts. Query params: `q` (name/notes/link substring), `sort` (`quantity_asc` default-friendly, `quantity_desc`, `name_asc`, `name_desc`, `recent`). Each row includes `model_count` and `model_names`. |
 | POST   | `/api/parts`               | Create a part. Body: `name`*, `quantity`* (≥ 0), `notes?`, `link?` (URL or SKU), `photo_url?`, `cost?` (≥ 0, per unit in the configured currency), `vendor?`. Returns 201. |
+| POST   | `/api/parts/bulk-edit`     | Bulk-update several parts in one transaction. Body: `part_ids`* (1–500, dupes collapse) plus any of `quantity`, `cost`, `vendor`, `link`, `photo_url`, `notes` — each **tri-state**: omitted keeps the value, `null` clears it, a value overwrites it — and `model_id` (link this model to every selected part, idempotent) / `unlink_model_ids` (unlink these models; absent links are no-ops). 404 if any part or model id is unknown, 400 when there is nothing to change. Returns the updated rows. |
 | GET    | `/api/parts/:id`           | Part detail: `{part, models[]}` — all compatible models. |
 | PUT    | `/api/parts/:id`           | Full replace update (same body as create). |
 | DELETE | `/api/parts/:id`           | Delete part (unlinked from all models). |
@@ -134,7 +135,7 @@ curl -s localhost:8080/api/models/1
 - `#/models` — list, search, category filter chips, linked-part counts.
 - `#/models/:id` — model detail: all linked parts with quantities (inline +/− stepper), link/unlink parts.
 - `#/models/new`, `#/models/:id/edit` — add/edit forms.
-- `#/parts` — all parts, searchable, sortable (defaults to quantity low→high so out-of-stock floats to the top; 0 shows an "out" badge, ≤2 a "low" badge).
+- `#/parts` — all parts, searchable, sortable (defaults to quantity low→high so out-of-stock floats to the top; 0 shows an "out" badge, ≤2 a "low" badge). Rows are checkbox-selectable; selecting one or more opens a **bulk edit** panel that changes any of the part fields (set or clear) on every selected part at once, and links/unlinks a chosen model across the selection.
 - `#/parts/:id` — part detail: quantity stepper, compatible models, link/unlink models.
 - `#/parts/new`, `#/parts/:id/edit` — add/edit forms.
 - `#/usage` — usage log: every part used on every model, with when/quantity/notes, filterable by part or model, plus a "log a usage" form.
@@ -151,7 +152,7 @@ Things the brief left open and how they were resolved:
 - **Part form fields:** the add/edit part form always shows the required name; every other field (quantity, cost, vendor, link/SKU, photo, notes) can be hidden from the form in `#/settings`. Hidden fields still exist on the record — edits just don't surface them — so nothing is ever wiped by hiding a field. The choice is stored server-side (`settings` table) and the part form reads it on load.
 - **Cost & vendor:** `cost` is a nullable `REAL` (per-unit, in the user's configured currency; validated finite and ≥ 0) and `vendor` is a nullable free-text string. Costs render with `Intl.NumberFormat` using the `currency` setting (ISO-4217, default USD), falling back to a plain `$` formatting if the runtime doesn't support the code.
 - **Link/SKU:** one string field `link` on parts. If it looks like an http(s) URL the UI renders it as a link, otherwise as a monospace SKU.
-- **Update semantics:** `PUT` is a full replace of the record (the forms always submit everything), which avoids sparse-patch edge cases in a single-user tool. Quantity changes also have the atomic `POST .../quantity {delta}` endpoint, clamped at 0 server-side.
+- **Update semantics:** `PUT` is a full replace of the record (the forms always submit everything), which avoids sparse-patch edge cases in a single-user tool. Quantity changes also have the atomic `POST .../quantity {delta}` endpoint, clamped at 0 server-side. The one deliberate exception is `POST /api/parts/bulk-edit`, which is a sparse tri-state update (per-field omitted/null/value) because a full-replace body makes no sense across a selection of different parts; the whole edit runs in a single transaction.
 - **Association endpoints:** both sides of the M:N are manageable (`/models/:id/parts` and `/parts/:id/models`); the model side also supports full-set replace. Duplicate links are idempotent no-ops.
 - **Usage log:** a "usage" is a part consumed on a model. Recording one decrements stock by the same amount (clamped at 0) so the drawer count and the log always agree; if you log more than is on hand the entry keeps the real quantity and the count clamps to 0. Entries are append-only: a mistaken entry is corrected by adjusting stock, not by deleting history. `model_id` is required on every entry because the whole point of the log is "which model did this go into?".
 - **Sorting/searching:** case-insensitive substring search over the obvious text fields (name/manufacturer/notes for models, name/notes/link for parts); `LIKE` wildcards in user input are escaped.

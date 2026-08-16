@@ -1243,3 +1243,273 @@ async fn usage_deleted_with_its_part_and_model() {
     let res = call(app.clone(), Method::GET, "/api/usage", None).await;
     assert_eq!(res.body.as_array().unwrap().len(), 0);
 }
+
+#[tokio::test]
+async fn part_bulk_edit_fields_and_links() {
+    let app = app().await;
+
+    let m = call(
+        app.clone(),
+        Method::POST,
+        "/api/models",
+        Some(model_json("Kraken 580", "heli")),
+    )
+    .await;
+    let model_id = id(&m.body);
+    let mut ids = Vec::new();
+    for (name, qty) in [("Blades A", 5), ("Blades B", 3), ("Canopy", 1)] {
+        let res = call(
+            app.clone(),
+            Method::POST,
+            "/api/parts",
+            Some(part_json(name, qty)),
+        )
+        .await;
+        assert_eq!(res.status, StatusCode::CREATED);
+        ids.push(id(&res.body));
+    }
+    let [p1, p2, p3] = ids.try_into().unwrap();
+
+    // set vendor + cost + quantity on p1/p2 and clear their link; p3 untouched
+    let res = call(
+        app.clone(),
+        Method::POST,
+        "/api/parts/bulk-edit",
+        Some(serde_json::json!({
+            "part_ids": [p1, p2],
+            "vendor": "Vortex",
+            "cost": 12.5,
+            "quantity": 4,
+            "link": null,
+        })),
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::OK);
+    let rows = res.body.as_array().unwrap();
+    assert_eq!(rows.len(), 2);
+    for row in rows {
+        assert_eq!(row["vendor"], "Vortex");
+        assert_eq!(row["cost"], 12.5);
+        assert_eq!(row["quantity"], 4);
+        assert!(row["link"].is_null(), "link cleared");
+        assert_eq!(row["notes"], "test part", "untouched field stays");
+        assert_eq!(row["model_count"], 0);
+    }
+
+    // p3 untouched
+    let res = call(app.clone(), Method::GET, &format!("/api/parts/{p3}"), None).await;
+    assert!(res.body["part"]["link"].as_str().is_some());
+    assert!(res.body["part"]["vendor"].is_null());
+    assert_eq!(res.body["part"]["quantity"], 1);
+
+    // bulk-link a model to p1+p2; field values carry through
+    let res = call(
+        app.clone(),
+        Method::POST,
+        "/api/parts/bulk-edit",
+        Some(serde_json::json!({
+            "part_ids": [p1, p2],
+            "model_id": model_id,
+        })),
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::OK);
+    for row in res.body.as_array().unwrap() {
+        assert_eq!(row["model_count"], 1);
+        assert_eq!(row["model_names"], "Kraken 580");
+    }
+    assert_eq!(res.body.as_array().unwrap()[0]["vendor"], "Vortex");
+
+    // re-linking is idempotent
+    let res = call(
+        app.clone(),
+        Method::POST,
+        "/api/parts/bulk-edit",
+        Some(serde_json::json!({
+            "part_ids": [p1, p2],
+            "model_id": model_id,
+        })),
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::OK);
+    assert_eq!(res.body.as_array().unwrap()[0]["model_count"], 1);
+
+    // bulk-unlink; unlinking a model that is not linked is a no-op
+    let res = call(
+        app.clone(),
+        Method::POST,
+        "/api/parts/bulk-edit",
+        Some(serde_json::json!({
+            "part_ids": [p1, p2],
+            "unlink_model_ids": [model_id],
+        })),
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::OK);
+    for row in res.body.as_array().unwrap() {
+        assert_eq!(row["model_count"], 0);
+    }
+    let res = call(
+        app.clone(),
+        Method::POST,
+        "/api/parts/bulk-edit",
+        Some(serde_json::json!({
+            "part_ids": [p1, p2],
+            "unlink_model_ids": [model_id],
+        })),
+    )
+    .await;
+    assert_eq!(
+        res.status,
+        StatusCode::OK,
+        "unlinking an absent link is a no-op"
+    );
+
+    // link + unlink in one call
+    let m2 = call(
+        app.clone(),
+        Method::POST,
+        "/api/models",
+        Some(model_json("S500", "heli")),
+    )
+    .await;
+    let m2_id = id(&m2.body);
+    let res = call(
+        app,
+        Method::POST,
+        "/api/parts/bulk-edit",
+        Some(serde_json::json!({
+            "part_ids": [p2],
+            "model_id": model_id,
+            "unlink_model_ids": [m2_id],
+        })),
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::OK);
+    let row = &res.body.as_array().unwrap()[0];
+    assert_eq!(row["model_names"], "Kraken 580");
+}
+
+#[tokio::test]
+async fn part_bulk_edit_validation_and_errors() {
+    let app = app().await;
+
+    let p = call(
+        app.clone(),
+        Method::POST,
+        "/api/parts",
+        Some(part_json("Blades", 3)),
+    )
+    .await;
+    let part_id = id(&p.body);
+    let m = call(
+        app.clone(),
+        Method::POST,
+        "/api/models",
+        Some(model_json("Kraken 580", "heli")),
+    )
+    .await;
+    let model_id = id(&m.body);
+
+    // empty part_ids
+    let res = call(
+        app.clone(),
+        Method::POST,
+        "/api/parts/bulk-edit",
+        Some(serde_json::json!({"part_ids": []})),
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::BAD_REQUEST);
+    assert_eq!(res.body["error"], "invalid_request");
+
+    // nothing to change
+    let res = call(
+        app.clone(),
+        Method::POST,
+        "/api/parts/bulk-edit",
+        Some(serde_json::json!({"part_ids": [part_id]})),
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::BAD_REQUEST);
+
+    // unknown part -> 404
+    let res = call(
+        app.clone(),
+        Method::POST,
+        "/api/parts/bulk-edit",
+        Some(serde_json::json!({"part_ids": [part_id, 424242], "vendor": "X"})),
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::NOT_FOUND);
+    assert_eq!(res.body["error"], "not_found");
+
+    // bad quantity / cost
+    let res = call(
+        app.clone(),
+        Method::POST,
+        "/api/parts/bulk-edit",
+        Some(serde_json::json!({"part_ids": [part_id], "quantity": -1})),
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::BAD_REQUEST);
+    let res = call(
+        app.clone(),
+        Method::POST,
+        "/api/parts/bulk-edit",
+        Some(serde_json::json!({"part_ids": [part_id], "cost": -2.5})),
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::BAD_REQUEST);
+
+    // unknown models on both link sides
+    let res = call(
+        app.clone(),
+        Method::POST,
+        "/api/parts/bulk-edit",
+        Some(serde_json::json!({"part_ids": [part_id], "model_id": 424242})),
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::NOT_FOUND);
+    let res = call(
+        app.clone(),
+        Method::POST,
+        "/api/parts/bulk-edit",
+        Some(serde_json::json!({"part_ids": [part_id], "unlink_model_ids": [424242]})),
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::NOT_FOUND);
+
+    // the rejected calls left the part untouched
+    let res = call(
+        app.clone(),
+        Method::GET,
+        &format!("/api/parts/{part_id}"),
+        None,
+    )
+    .await;
+    assert_eq!(res.body["part"]["quantity"], 3);
+    assert!(res.body["part"]["vendor"].is_null());
+
+    // duplicate ids collapse
+    let res = call(
+        app.clone(),
+        Method::POST,
+        "/api/parts/bulk-edit",
+        Some(serde_json::json!({"part_ids": [part_id, part_id], "vendor": "Vortex"})),
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::OK);
+    assert_eq!(res.body.as_array().unwrap().len(), 1);
+
+    // a whitespace-only string acts as a clear
+    let res = call(
+        app,
+        Method::POST,
+        "/api/parts/bulk-edit",
+        Some(serde_json::json!({"part_ids": [part_id], "notes": "   "})),
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::OK);
+    assert!(res.body.as_array().unwrap()[0]["notes"].is_null());
+    assert_eq!(model_id, id(&m.body)); // keep the created model in scope
+}

@@ -74,6 +74,24 @@ export interface UsageRecord {
   used_at: string;
 }
 
+/**
+ * Bulk-edit payload. Every field is tri-state: omitted (`undefined`) leaves
+ * the value untouched, `null` clears it, a value overwrites it.
+ */
+export interface PartBulkEdit {
+  part_ids: number[];
+  quantity?: number | null;
+  cost?: number | null;
+  vendor?: string | null;
+  link?: string | null;
+  photo_url?: string | null;
+  notes?: string | null;
+  /** Link this model to every selected part (idempotent). */
+  model_id?: number;
+  /** Unlink these models from every selected part (absent links are a no-op). */
+  unlink_model_ids?: number[];
+}
+
 /** Payload for recording a usage; the fixed side comes from the URL. */
 export interface LogUsageInput {
   quantity?: number;
@@ -202,6 +220,12 @@ export const api = {
     return request(`/parts/${id}/quantity`, {
       method: 'POST',
       body: JSON.stringify({ delta }),
+    });
+  },
+  bulkEditParts(edit: PartBulkEdit): Promise<Part[]> {
+    return request('/parts/bulk-edit', {
+      method: 'POST',
+      body: JSON.stringify(edit),
     });
   },
   logUsageForPart(partId: number, input: LogUsageInput & { model_id: number }): Promise<UsageRecord> {

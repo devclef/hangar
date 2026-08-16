@@ -14,8 +14,8 @@ use tower_http::trace::TraceLayer;
 use crate::error::DomainError;
 use crate::service::ServiceApi;
 use crate::types::{
-    Model, ModelDetail, ModelInput, ModelListFilter, ModelListRow, Part, PartDetail, PartInput,
-    PartListFilter, PartListRow, Settings, UsageFilter, UsageInput, UsageRecord,
+    Model, ModelDetail, ModelInput, ModelListFilter, ModelListRow, Part, PartBulkEdit, PartDetail,
+    PartInput, PartListFilter, PartListRow, Settings, UsageFilter, UsageInput, UsageRecord,
 };
 
 #[derive(Clone)]
@@ -40,6 +40,7 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/models/{id}/parts/{part_id}", delete(unlink_part))
         .route("/parts", get(list_parts).post(create_part))
+        .route("/parts/bulk-edit", post(bulk_edit_parts))
         .route(
             "/parts/{id}",
             get(get_part).put(update_part).delete(delete_part),
@@ -242,6 +243,14 @@ async fn list_parts(
             .list_parts(filter.q.as_deref(), filter.sort)
             .await?,
     ))
+}
+
+async fn bulk_edit_parts(
+    State(st): State<AppState>,
+    body: Result<Json<PartBulkEdit>, JsonRejection>,
+) -> Result<Json<Vec<PartListRow>>, DomainError> {
+    let body = parse_body(body)?;
+    Ok(Json(st.service.bulk_edit_parts(body).await?))
 }
 
 async fn create_part(

@@ -5,8 +5,8 @@ pub mod sqlite;
 
 use crate::error::DomainError;
 use crate::types::{
-    Category, Model, ModelInput, ModelListRow, Part, PartDetail, PartInput, PartListRow, PartSort,
-    Settings, UsageRecord,
+    Category, Model, ModelInput, ModelListRow, Part, PartBulkEdit, PartDetail, PartInput,
+    PartListRow, PartSort, Settings, UsageRecord,
 };
 use async_trait::async_trait;
 
@@ -41,6 +41,17 @@ pub trait HangarRepo: Send + Sync {
     async fn set_quantity(&self, id: i64, quantity: i32) -> Result<Option<Part>, DomainError>;
     /// Atomic relative change, clamped at 0 in SQL.
     async fn adjust_quantity(&self, id: i64, delta: i64) -> Result<Option<Part>, DomainError>;
+    /// Applies a validated bulk edit (field updates + model link changes) to
+    /// the given parts in a single transaction. Parts must exist
+    /// (caller-checked); an unknown model is a caller error too.
+    async fn bulk_edit_parts(
+        &self,
+        part_ids: &[i64],
+        input: &PartBulkEdit,
+    ) -> Result<(), DomainError>;
+    /// Part list rows for exactly these ids, in id order. Empty input
+    /// yields an empty list.
+    async fn list_parts_by_ids(&self, part_ids: &[i64]) -> Result<Vec<PartListRow>, DomainError>;
 
     // -- Model <-> part association -----------------------------------------
 

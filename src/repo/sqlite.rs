@@ -2,13 +2,13 @@
 
 use async_trait::async_trait;
 use sqlx::sqlite::SqlitePool;
-use sqlx::{query, query_as, query_scalar};
+use sqlx::{query, query_as, query_scalar, QueryBuilder, Sqlite};
 
 use super::HangarRepo;
 use crate::error::DomainError;
 use crate::types::{
-    like_pattern, Category, Model, ModelInput, ModelListRow, Part, PartInput, PartListRow,
-    PartSort, Settings, UsageRecord,
+    like_pattern, Category, Model, ModelInput, ModelListRow, Part, PartBulkEdit, PartInput,
+    PartListRow, PartSort, Settings, UsageRecord,
 };
 
 pub struct SqliteRepo {
@@ -211,6 +211,97 @@ impl HangarRepo for SqliteRepo {
         .fetch_optional(&self.pool)
         .await?;
         Ok(row)
+    }
+
+    async fn bulk_edit_parts(
+        &self,
+        part_ids: &[i64],
+        input: &PartBulkEdit,
+    ) -> Result<(), DomainError> {
+        let mut tx = self.pool.begin().await?;
+        if input.has_field_updates() {
+            // Fields are tri-state: `Some(v)` writes (a clear when `v` is
+            // None), `None` leaves the column untouched.
+            let mut qb = QueryBuilder::<Sqlite>::new(String::from(
+                "UPDATE parts SET updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')",
+            ));
+            if input.quantity.is_present() {
+                qb.push(", quantity = ");
+                qb.push_bind(input.quantity.as_value().map(|q| *q as i32));
+            }
+            if input.cost.is_present() {
+                qb.push(", cost = ");
+                qb.push_bind(input.cost.as_value().copied());
+            }
+            if input.vendor.is_present() {
+                qb.push(", vendor = ");
+                qb.push_bind(input.vendor.as_value().cloned());
+            }
+            if input.link.is_present() {
+                qb.push(", link = ");
+                qb.push_bind(input.link.as_value().cloned());
+            }
+            if input.photo_url.is_present() {
+                qb.push(", photo_url = ");
+                qb.push_bind(input.photo_url.as_value().cloned());
+            }
+            if input.notes.is_present() {
+                qb.push(", notes = ");
+                qb.push_bind(input.notes.as_value().cloned());
+            }
+            qb.push(" WHERE id IN (");
+            qb.push_values(part_ids.iter().copied(), |mut w, id| {
+                w.push_bind(id);
+            });
+            qb.push(")");
+            qb.build().execute(&mut *tx).await?;
+        }
+        if let Some(model_id) = input.model_id {
+            for part_id in part_ids {
+                query("INSERT OR IGNORE INTO model_parts (model_id, part_id) VALUES (?1, ?2)")
+                    .bind(model_id)
+                    .bind(*part_id)
+                    .execute(&mut *tx)
+                    .await?;
+            }
+        }
+        for model_id in &input.unlink_model_ids {
+            let mut del = QueryBuilder::<Sqlite>::new(String::from(
+                "DELETE FROM model_parts WHERE model_id = ",
+            ));
+            del.push_bind(*model_id);
+            del.push(" AND part_id IN (");
+            del.push_values(part_ids.iter().copied(), |mut w, id| {
+                w.push_bind(id);
+            });
+            del.push(")");
+            del.build().execute(&mut *tx).await?;
+        }
+        tx.commit().await?;
+        Ok(())
+    }
+
+    async fn list_parts_by_ids(&self, part_ids: &[i64]) -> Result<Vec<PartListRow>, DomainError> {
+        if part_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let mut qb = QueryBuilder::<Sqlite>::new(String::from(
+            "SELECT p.*, \
+                   (SELECT COUNT(*) FROM model_parts mp WHERE mp.part_id = p.id) AS model_count, \
+                   (SELECT GROUP_CONCAT(m.name, '|') \
+                      FROM model_parts mp JOIN models m ON m.id = mp.model_id \
+                     WHERE mp.part_id = p.id) AS model_names \
+               FROM parts p WHERE p.id IN (",
+        ));
+        qb.push_values(part_ids.iter().copied(), |mut w, id| {
+            w.push_bind(id);
+        });
+        qb.push(") ORDER BY p.id ASC");
+        let rows = qb
+            .build_query_as::<PartListRow>()
+            .fetch_all(&self.pool)
+            .await?;
+        Ok(rows)
     }
 
     // -- Model <-> part association -----------------------------------------

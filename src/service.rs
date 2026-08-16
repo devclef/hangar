@@ -12,8 +12,8 @@ use crate::error::{DomainError, NotFound};
 use crate::repo::sqlite::SqliteRepo;
 use crate::repo::HangarRepo;
 use crate::types::{
-    Model, ModelDetail, ModelInput, Part, PartDetail, PartInput, PartListRow, PartSort, Settings,
-    UsageInput, UsageRecord,
+    Model, ModelDetail, ModelInput, Part, PartBulkEdit, PartDetail, PartInput, PartListRow,
+    PartSort, Settings, UsageInput, UsageRecord,
 };
 
 #[async_trait]
@@ -41,6 +41,9 @@ pub trait ServiceApi: Send + Sync {
     async fn delete_part(&self, id: i64) -> Result<(), DomainError>;
     async fn set_quantity(&self, id: i64, quantity: i64) -> Result<Part, DomainError>;
     async fn adjust_quantity(&self, id: i64, delta: i64) -> Result<Part, DomainError>;
+    /// Bulk-edit several parts at once: tri-state field updates plus
+    /// optional model link/unlink. Returns the updated list rows.
+    async fn bulk_edit_parts(&self, input: PartBulkEdit) -> Result<Vec<PartListRow>, DomainError>;
 
     // -- Association ----------------------------------------------------------
     async fn list_model_parts(&self, model_id: i64) -> Result<Vec<PartListRow>, DomainError>;
@@ -200,6 +203,19 @@ impl ServiceApi for Service {
         }
         let part = self.repo.adjust_quantity(id, delta).await?;
         self.require_part(part, id)
+    }
+
+    async fn bulk_edit_parts(&self, input: PartBulkEdit) -> Result<Vec<PartListRow>, DomainError> {
+        let input = input.validate()?;
+        self.verify_parts_exist(&input.part_ids).await?;
+        if let Some(model_id) = input.model_id {
+            self.require_model(self.repo.get_model(model_id).await?, model_id)?;
+        }
+        for model_id in &input.unlink_model_ids {
+            self.require_model(self.repo.get_model(*model_id).await?, *model_id)?;
+        }
+        self.repo.bulk_edit_parts(&input.part_ids, &input).await?;
+        self.repo.list_parts_by_ids(&input.part_ids).await
     }
 
     async fn list_model_parts(&self, model_id: i64) -> Result<Vec<PartListRow>, DomainError> {

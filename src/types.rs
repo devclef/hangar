@@ -413,6 +413,155 @@ impl PartInput {
     }
 }
 
+/// One editable field in a bulk edit. **`Skip`** (absent from the JSON)
+/// leaves the field untouched, **`null`** clears it, and a **value**
+/// overwrites it. A plain `Option<Option<T>>` cannot express this because
+/// serde collapses a JSON `null` to the outer `None`.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub enum BulkValue<T> {
+    /// Not present on the wire: leave the field alone.
+    #[default]
+    Skip,
+    /// `null` on the wire: clear the field.
+    Clear,
+    /// A value on the wire: overwrite the field.
+    Set(T),
+}
+
+impl<T> BulkValue<T> {
+    /// True when the field should be written (set or clear).
+    pub fn is_present(&self) -> bool {
+        !matches!(self, Self::Skip)
+    }
+
+    /// `None` for skip/clear, `Some(&value)` for a set.
+    pub fn as_value(&self) -> Option<&T> {
+        match self {
+            Self::Set(v) => Some(v),
+            Self::Skip | Self::Clear => None,
+        }
+    }
+}
+
+impl<'de, T: serde::Deserialize<'de>> serde::Deserialize<'de> for BulkValue<T> {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = Option::<T>::deserialize(deserializer)?;
+        Ok(match value {
+            None => Self::Clear,
+            Some(v) => Self::Set(v),
+        })
+    }
+}
+
+impl<T: serde::Serialize> serde::Serialize for BulkValue<T> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self {
+            Self::Skip | Self::Clear => serializer.serialize_none(),
+            Self::Set(v) => v.serialize(serializer),
+        }
+    }
+}
+
+/// Body for bulk-editing several parts at once. Every editable field is
+/// tri-state (see [`BulkValue`]). `model_id` / `unlink_model_ids` manage
+/// the model links of every selected part.
+#[derive(Debug, Default, Deserialize)]
+pub struct PartBulkEdit {
+    /// Parts to update; at least one, duplicates collapse.
+    pub part_ids: Vec<i64>,
+    /// New quantity on hand for every selected part.
+    #[serde(default)]
+    pub quantity: BulkValue<i64>,
+    #[serde(default)]
+    pub cost: BulkValue<f64>,
+    #[serde(default)]
+    pub vendor: BulkValue<String>,
+    #[serde(default)]
+    pub link: BulkValue<String>,
+    #[serde(default)]
+    pub photo_url: BulkValue<String>,
+    #[serde(default)]
+    pub notes: BulkValue<String>,
+    /// When present, link this model to every selected part (idempotent).
+    #[serde(default)]
+    pub model_id: Option<i64>,
+    /// When non-empty, unlink these models from every selected part.
+    /// Unlinking a model that is not linked to a part is a no-op.
+    #[serde(default)]
+    pub unlink_model_ids: Vec<i64>,
+}
+
+impl PartBulkEdit {
+    /// True when at least one part field (as opposed to only link changes)
+    /// should be written.
+    pub fn has_field_updates(&self) -> bool {
+        self.quantity.is_present()
+            || self.cost.is_present()
+            || self.vendor.is_present()
+            || self.link.is_present()
+            || self.photo_url.is_present()
+            || self.notes.is_present()
+    }
+
+    /// Trims, dedupes ids, validates bounds, and normalizes strings that
+    /// trim to empty into explicit clears. Returns the normalized input.
+    pub fn validate(mut self) -> Result<Self, crate::error::DomainError> {
+        if self.part_ids.is_empty() {
+            return Err(crate::error::DomainError::Invalid(
+                "part_ids: must not be empty".into(),
+            ));
+        }
+        if self.part_ids.len() > 500 {
+            return Err(crate::error::DomainError::Invalid(
+                "part_ids: too many ids (max 500)".into(),
+            ));
+        }
+        self.part_ids.sort_unstable();
+        self.part_ids.dedup();
+        if let BulkValue::Set(q) = &self.quantity {
+            if *q < 0 {
+                return Err(crate::error::DomainError::Invalid(
+                    "quantity: must be zero or a positive integer".into(),
+                ));
+            }
+            if *q > i32::MAX as i64 {
+                return Err(crate::error::DomainError::Invalid(
+                    "quantity: too large (max 2147483647)".into(),
+                ));
+            }
+        }
+        if let BulkValue::Set(c) = &self.cost {
+            if !c.is_finite() || *c < 0.0 {
+                return Err(crate::error::DomainError::Invalid(
+                    "cost: must be a finite number, zero or more".into(),
+                ));
+            }
+        }
+        self.vendor = normalize_bulk_string(self.vendor);
+        self.link = normalize_bulk_string(self.link);
+        self.photo_url = normalize_bulk_string(self.photo_url);
+        self.notes = normalize_bulk_string(self.notes);
+        if !self.has_field_updates() && self.model_id.is_none() && self.unlink_model_ids.is_empty()
+        {
+            return Err(crate::error::DomainError::Invalid(
+                "nothing to update: set at least one field or a model link change".into(),
+            ));
+        }
+        self.unlink_model_ids.sort_unstable();
+        self.unlink_model_ids.dedup();
+        Ok(self)
+    }
+}
+
+/// `Set(s)` that trims to empty becomes a clear; everything else is kept.
+fn normalize_bulk_string(v: BulkValue<String>) -> BulkValue<String> {
+    match v {
+        BulkValue::Set(s) if !s.trim().is_empty() => BulkValue::Set(s.trim().to_string()),
+        BulkValue::Set(_) => BulkValue::Clear,
+        other => other,
+    }
+}
+
 /// Body for recording a usage entry. The part/model id not present in the
 /// body comes from the request path (`/parts/{id}/usage` vs
 /// `/models/{id}/usage`), so only the variable part of the entry lives here.
@@ -777,6 +926,95 @@ mod tests {
             currency: "U.S!".into(),
         };
         assert!(bad.validate().is_err());
+    }
+
+    #[test]
+    fn deserializes_bulk_value_tri_states() {
+        #[derive(Deserialize)]
+        struct Probe {
+            #[serde(default)]
+            value: BulkValue<String>,
+        }
+        let absent: Probe = serde_json::from_str("{}").unwrap();
+        assert_eq!(absent.value, BulkValue::Skip, "absent stays absent");
+        let cleared: Probe = serde_json::from_str(r#"{"value": null}"#).unwrap();
+        assert_eq!(cleared.value, BulkValue::Clear, "null clears");
+        let set: Probe = serde_json::from_str(r#"{"value": "Vortex"}"#).unwrap();
+        assert_eq!(set.value, BulkValue::Set("Vortex".into()));
+    }
+
+    #[test]
+    fn validates_bulk_edit() {
+        fn base() -> PartBulkEdit {
+            PartBulkEdit {
+                part_ids: vec![2, 1, 2],
+                quantity: BulkValue::Skip,
+                cost: BulkValue::Skip,
+                vendor: BulkValue::Set("  Vortex  ".into()),
+                link: BulkValue::Skip,
+                photo_url: BulkValue::Skip,
+                notes: BulkValue::Set("   ".into()),
+                model_id: None,
+                unlink_model_ids: vec![9, 9, 4],
+            }
+        }
+
+        let out = base().validate().unwrap();
+        assert_eq!(out.part_ids, vec![1, 2], "ids dedupe and sort");
+        assert_eq!(out.vendor, BulkValue::Set("Vortex".into()));
+        assert_eq!(
+            out.notes,
+            BulkValue::Clear,
+            "whitespace-only string becomes an explicit clear"
+        );
+        assert_eq!(out.link, BulkValue::Skip, "absent stays absent");
+        assert!(out.has_field_updates());
+        assert_eq!(out.unlink_model_ids, vec![4, 9]);
+
+        // empty selection is rejected
+        assert!(PartBulkEdit::default().validate().is_err());
+
+        // a selection with no changes is rejected
+        let nothing = PartBulkEdit {
+            part_ids: vec![1],
+            ..Default::default()
+        };
+        assert!(nothing.validate().is_err());
+
+        // a link change alone is a valid bulk edit
+        let links_only = PartBulkEdit {
+            part_ids: vec![1],
+            model_id: Some(7),
+            ..Default::default()
+        };
+        assert!(!links_only.has_field_updates());
+        assert!(links_only.validate().is_ok());
+
+        // bound checks
+        let bad_qty = PartBulkEdit {
+            part_ids: vec![1],
+            quantity: BulkValue::Set(-1),
+            ..Default::default()
+        };
+        assert!(bad_qty.validate().is_err());
+        let huge_qty = PartBulkEdit {
+            part_ids: vec![1],
+            quantity: BulkValue::Set(i32::MAX as i64 + 1),
+            ..Default::default()
+        };
+        assert!(huge_qty.validate().is_err());
+        let bad_cost = PartBulkEdit {
+            part_ids: vec![1],
+            cost: BulkValue::Set(-0.5),
+            ..Default::default()
+        };
+        assert!(bad_cost.validate().is_err());
+        let nan_cost = PartBulkEdit {
+            part_ids: vec![1],
+            cost: BulkValue::Set(f64::NAN),
+            ..Default::default()
+        };
+        assert!(nan_cost.validate().is_err());
     }
 
     #[test]

@@ -33,9 +33,12 @@ RUN apt-get update \
 WORKDIR /app
 COPY --from=builder /app/target/release/hangar /usr/local/bin/hangar
 COPY --from=frontend /app/frontend/dist /app/static
+# Reference catalog source files (imported into the DB at startup).
+COPY catalog-data /app/catalog-data
 ENV PORT=8080 \
     DATA_DIR=/data \
-    STATIC_DIR=/app/static
+    STATIC_DIR=/app/static \
+    CATALOG_DIR=/app/catalog-data
 VOLUME ["/data"]
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \

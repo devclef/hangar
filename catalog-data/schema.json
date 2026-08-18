@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "hangar/catalog-file",
+  "title": "Hangar catalog model file",
+  "description": "One file per known manufacturer/model combination. Imported into the catalog_* tables at startup and by `hangar import-catalog`. The Rust importer (src/catalog.rs) enforces exactly these rules with file+field error messages; this schema documents the same format for editors and external tooling.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["manufacturer", "model", "category", "parts"],
+  "properties": {
+    "manufacturer": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "description": "Display name of the manufacturer (e.g. \"OMP Hobby\"). Matching on re-import is exact after trimming, so keep the casing stable."
+    },
+    "model": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "description": "Display name of the model (e.g. \"M1\")."
+    },
+    "category": {
+      "enum": ["heli", "plane", "car", "drone", "boat", "other"],
+      "description": "Must match the category of any user model linked to this catalog model."
+    },
+    "diagram_asset": {
+      "type": ["string", "null"],
+      "maxLength": 200,
+      "description": "Optional per-model diagram override: a plain file name in frontend/src/lib/diagrams/ (e.g. \"heli-generic.svg\"). No '/' or '..'. Omitted/null = the generic per-category SVG (<category>-generic.svg)."
+    },
+    "parts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Part name (e.g. \"Main blade grip set\")."
+          },
+          "part_number": {
+            "type": ["string", "null"],
+            "maxLength": 100,
+            "description": "Official manufacturer part number. Nullable: adding a row can come before the number is verified. Empty strings are treated as null. Part numbers are the stable identity of a row on re-import (exact match); without one, the (case-insensitive) name is."
+          },
+          "category": {
+            "type": ["string", "null"],
+            "maxLength": 100,
+            "description": "Free-text grouping for the legend (e.g. \"Blade grip\", \"Tail boom\"). Not the user-part part type."
+          },
+          "notes": {
+            "type": ["string", "null"],
+            "maxLength": 2000,
+            "description": "Free-text notes (fitment caveats, what's included, ...)."
+          },
+          "diagram_x": {
+            "type": ["number", "null"],
+            "minimum": 0,
+            "maximum": 100,
+            "description": "Hotspot x, percentage (0-100) of the diagram width. Must be given together with diagram_y."
+          },
+          "diagram_y": {
+            "type": ["number", "null"],
+            "minimum": 0,
+            "maximum": 100,
+            "description": "Hotspot y, percentage (0-100) of the diagram height. Must be given together with diagram_x."
+          }
+        },
+        "allOf": [
+          {
+            "if": { "required": ["diagram_x"], "properties": { "diagram_x": { "type": "number" } } },
+            "then": { "required": ["diagram_y"] }
+          },
+          {
+            "if": { "required": ["diagram_y"], "properties": { "diagram_y": { "type": "number" } } },
+            "then": { "required": ["diagram_x"] }
+          }
+        ]
+      },
+      "description": "Parts of this model. Duplicates (same part_number, or same name when part_number is absent) are rejected. Parts removed from a later edit are NOT deleted on re-import; they are left in place and logged as orphans for manual review."
+    }
+  }
+}

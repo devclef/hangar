@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 60" width="100%" height="100%"
+     fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"
+     preserveAspectRatio="xMidYMid meet">
+  <!-- Main rotor -->
+  <line x1="12" y1="7.5" x2="62" y2="7.5" stroke-width="1.6"/>
+  <circle cx="37" cy="9.5" r="2"/>
+  <line x1="37" y1="11.5" x2="37" y2="16.5"/>
+  <!-- Fuselage + canopy + tail boom -->
+  <path d="M 14 26 C 14 21.5 18.5 18.5 24 18 L 42 17.5 L 80 20.5 L 86 22.5 L 82 25.5 L 46 29.5
+           C 41 33.5 24 33.5 17.5 31 C 15.5 30 14 28 14 26 Z"/>
+  <!-- Canopy glass line -->
+  <path d="M 19.5 19.5 C 22 18.5 26 17.9 30 17.8" opacity="0.5"/>
+  <!-- Tail fin -->
+  <path d="M 82.5 21.5 L 84.5 13.5 L 87.5 23"/>
+  <!-- Tail rotor -->
+  <circle cx="87" cy="18.5" r="5"/>
+  <line x1="83.5" y1="15" x2="90.5" y2="22" opacity="0.5"/>
+  <line x1="90.5" y1="15" x2="83.5" y2="22" opacity="0.5"/>
+  <!-- Skids -->
+  <line x1="12" y1="44" x2="46" y2="44" stroke-width="1.6"/>
+  <line x1="20" y1="33.5" x2="17.5" y2="44"/>
+  <line x1="40" y1="32.5" x2="42.5" y2="44"/>
+  <!-- Zone labels -->
+  <g fill="currentColor" stroke="none" font-family="ui-sans-serif, system-ui, sans-serif" opacity="0.55">
+    <text x="37" y="4.2" font-size="2.6" text-anchor="middle">rotor head</text>
+    <text x="22.5" y="22.8" font-size="2.6" text-anchor="middle">canopy</text>
+    <text x="33" y="28.2" font-size="2.6" text-anchor="middle">main shaft</text>
+    <text x="63" y="28.6" font-size="2.6" text-anchor="middle">tail boom</text>
+    <text x="87" y="28.2" font-size="2.6" text-anchor="middle">tail rotor</text>
+    <text x="29" y="47.8" font-size="2.6" text-anchor="middle">skids</text>
+  </g>
+</svg>

@@ -193,6 +193,11 @@ pub struct Model {
     pub date_acquired: Option<String>,
     pub status: ModelStatus,
     pub photo_url: Option<String>,
+    /// Optional link to a reference catalog model. Managed exclusively via
+    /// `POST/DELETE /api/models/:id/link-catalog` — `PUT /api/models/:id`
+    /// does NOT touch it, so full-replace updates never wipe the link.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub catalog_model_id: Option<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, sqlx::FromRow)]
@@ -221,6 +226,8 @@ pub struct ModelListRow {
     pub date_acquired: Option<String>,
     pub status: ModelStatus,
     pub photo_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub catalog_model_id: Option<i64>,
     pub part_count: i64,
 }
 
@@ -235,6 +242,7 @@ impl ModelListRow {
             date_acquired: self.date_acquired,
             status: self.status,
             photo_url: self.photo_url,
+            catalog_model_id: self.catalog_model_id,
         }
     }
 }
@@ -277,6 +285,98 @@ impl PartListRow {
 pub struct ModelDetail {
     pub model: Model,
     pub parts: Vec<PartListRow>,
+    /// Set when the model is linked to a reference catalog model: a small
+    /// summary (no full parts list — that stays on
+    /// `GET /api/catalog/models/:id`) so the detail page can show the
+    /// "known parts / diagram" section without guessing the id.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub catalog: Option<CatalogModelSummary>,
+}
+
+/// The embedded catalog summary on `GET /api/models/:id` (see `ModelDetail`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct CatalogModelSummary {
+    pub catalog_model_name: String,
+    /// The model's diagram override as stored (`null` → frontend falls back
+    /// to the generic per-category SVG).
+    pub diagram_asset: Option<String>,
+}
+
+// ---------------------------------------------------------------------------
+// Reference catalog
+// ---------------------------------------------------------------------------
+
+/// A catalog manufacturer with how many catalog models it has.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, sqlx::FromRow)]
+pub struct CatalogManufacturer {
+    pub id: i64,
+    pub name: String,
+    pub notes: Option<String>,
+    pub model_count: i64,
+}
+
+/// A catalog model row (joined with its manufacturer's display name).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, sqlx::FromRow)]
+pub struct CatalogModel {
+    pub id: i64,
+    pub manufacturer_id: i64,
+    pub manufacturer: String,
+    pub name: String,
+    pub category: Category,
+    /// Per-model diagram override (a file in `frontend/src/lib/diagrams/`);
+    /// `None` → generic per-category SVG.
+    pub diagram_asset: Option<String>,
+    /// Catalog file this row was imported from (repo-relative).
+    pub source_file: String,
+    /// sha256 hex of that file's contents when it was last imported.
+    pub source_checksum: String,
+}
+
+/// A catalog part: a known official part of a catalog model.
+#[derive(Debug, Clone, PartialEq, Serialize, sqlx::FromRow)]
+pub struct CatalogPart {
+    pub id: i64,
+    pub catalog_model_id: i64,
+    pub name: String,
+    /// Official manufacturer part number; `None` when not verified yet.
+    pub part_number: Option<String>,
+    /// Free-text grouping for the legend (e.g. "Blade grip").
+    pub category: Option<String>,
+    pub notes: Option<String>,
+    /// Hotspot position on the diagram, percentages 0-100; `None` when the
+    /// part is not diagram-placeable.
+    pub diagram_x: Option<f64>,
+    pub diagram_y: Option<f64>,
+}
+
+/// A catalog part as returned by `GET /api/catalog/models/:id`, with the
+/// live owned quantity (sum over the inventory parts tied to this catalog
+/// part and linked to the linked user models) or `None` when no user model
+/// is linked to the catalog model (or none of its parts is owned).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct CatalogPartView {
+    #[serde(flatten)]
+    pub part: CatalogPart,
+    pub owned_quantity: Option<i32>,
+}
+
+/// A user model linked to a catalog model (drives owned quantities).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct CatalogLinkedModel {
+    pub id: i64,
+    pub name: String,
+}
+
+/// Catalog model detail: `{model, diagram_asset, linked_models[], parts[]}`.
+#[derive(Debug, Serialize)]
+pub struct CatalogModelDetail {
+    pub model: CatalogModel,
+    /// Effective diagram asset: the model's override when set, else `None`
+    /// (the frontend falls back to `<category>-generic.svg`).
+    pub diagram_asset: Option<String>,
+    /// User models currently linked to this catalog model.
+    pub linked_models: Vec<CatalogLinkedModel>,
+    pub parts: Vec<CatalogPartView>,
 }
 
 /// Part detail payload: the part plus every model it is linked to.

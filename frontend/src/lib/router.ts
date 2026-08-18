@@ -8,6 +8,8 @@ export type Route =
   | { page: 'parts' }
   | { page: 'part'; id: number }
   | { page: 'part-form'; id?: number }
+  | { page: 'catalog' }
+  | { page: 'catalog-model'; id: number }
   | { page: 'usage' }
   | { page: 'settings' };
 
@@ -35,6 +37,13 @@ export function parseRoute(hash: string = window.location.hash): Route {
       }
       return { page: 'parts' };
     }
+    case 'catalog': {
+      if (a === 'models') {
+        const id = toNum(b);
+        if (id !== undefined) return { page: 'catalog-model', id };
+      }
+      return { page: 'catalog' };
+    }
     case 'usage':
       return { page: 'usage' };
     case 'settings':
@@ -51,6 +60,8 @@ export const href = {
   parts: '#/parts',
   part: (id: number) => `#/parts/${id}`,
   partForm: (id?: number) => (id === undefined ? '#/parts/new' : `#/parts/${id}/edit`),
+  catalog: '#/catalog',
+  catalogModel: (id: number) => `#/catalog/models/${id}`,
   usage: '#/usage',
   settings: '#/settings',
 };

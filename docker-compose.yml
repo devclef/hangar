@@ -9,6 +9,7 @@ services:
       PORT: "8080"
       DATA_DIR: /data
       STATIC_DIR: /app/static
+      CATALOG_DIR: /app/catalog-data
       RUST_LOG: info
     volumes:
       - hangar-data:/data

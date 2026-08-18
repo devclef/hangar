@@ -3,7 +3,7 @@
 
 use axum::body::Body;
 use axum::http::{Method, Request, StatusCode};
-use hangar::service::Service;
+use hangar::service::{Service, ServiceApi};
 use hangar::AppState;
 use std::sync::Arc;
 use tower::ServiceExt;
@@ -1652,4 +1652,961 @@ async fn part_bulk_edit_validation_and_errors() {
     assert_eq!(res.status, StatusCode::OK);
     assert!(res.body.as_array().unwrap()[0]["notes"].is_null());
     assert_eq!(model_id, id(&m.body)); // keep the created model in scope
+}
+
+// ---------------------------------------------------------------------------
+// Reference catalog
+// ---------------------------------------------------------------------------
+
+/// An app plus its service, so tests can drive the catalog importer directly
+/// (startup/CLI do the same) before hitting the HTTP API.
+async fn app_with_service() -> (axum::Router, std::sync::Arc<hangar::service::Service>) {
+    let pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect("sqlite::memory:")
+        .await
+        .unwrap();
+    sqlx::migrate!().run(&pool).await.unwrap();
+    let service = std::sync::Arc::new(hangar::service::Service::from_sqlite(pool));
+    let state = AppState {
+        service: service.clone(),
+        static_dir: None,
+    };
+    (hangar::router(state), service)
+}
+
+static CATALOG_FILE_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Writes a catalog JSON file to a uniquely-named temp path.
+fn write_catalog_file(contents: &str) -> std::path::PathBuf {
+    let n = CATALOG_FILE_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let path = std::env::temp_dir().join(format!(
+        "hangar-catalog-api-{}-{}.json",
+        std::process::id(),
+        n
+    ));
+    std::fs::write(&path, contents).unwrap();
+    path
+}
+
+const M1_JSON: &str = r#"{
+  "manufacturer": "OMP Hobby",
+  "model": "M1",
+  "category": "heli",
+  "diagram_asset": "heli-generic.svg",
+  "parts": [
+    {
+      "name": "Main blade grip set",
+      "part_number": "OSHM1013",
+      "category": "Blade grip",
+      "notes": "Includes bearings",
+      "diagram_x": 37.0,
+      "diagram_y": 18.0
+    },
+    {
+      "name": "Tail blade grip set",
+      "part_number": null,
+      "category": "Blade grip",
+      "notes": "Part number not yet verified",
+      "diagram_x": 91.0,
+      "diagram_y": 47.0
+    },
+    { "name": "Hardware bag", "part_number": null, "notes": "Not diagram-placeable" }
+  ]
+}"#;
+
+#[tokio::test]
+async fn catalog_import_browse_and_short_circuit() {
+    let (app, service) = app_with_service().await;
+
+    // import a file
+    let path = write_catalog_file(M1_JSON);
+    let result = service
+        .import_catalog_file(&path)
+        .await
+        .expect("import should succeed");
+    assert!(matches!(
+        result.status,
+        hangar::catalog::ImportStatus::Created
+    ));
+    assert!(result.model_created);
+    assert_eq!(result.parts_created, 3);
+    assert!(result.orphaned_parts.is_empty());
+
+    // list manufacturers (with model_count)
+    let res = call(app.clone(), Method::GET, "/api/catalog/manufacturers", None).await;
+    assert_eq!(res.status, StatusCode::OK);
+    let list = res.body.as_array().unwrap();
+    assert_eq!(list.len(), 1);
+    assert_eq!(list[0]["name"], "OMP Hobby");
+    assert_eq!(list[0]["model_count"], 1);
+    let mfr_id = list[0]["id"].as_i64().unwrap();
+
+    // list models for a manufacturer
+    let res = call(
+        app.clone(),
+        Method::GET,
+        &format!("/api/catalog/manufacturers/{mfr_id}/models"),
+        None,
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::OK);
+    let models = res.body.as_array().unwrap();
+    assert_eq!(models.len(), 1);
+    assert_eq!(models[0]["name"], "M1");
+    assert_eq!(models[0]["category"], "heli");
+    assert_eq!(models[0]["diagram_asset"], "heli-generic.svg");
+    assert_eq!(models[0]["manufacturer"], "OMP Hobby");
+    assert!(!models[0]["source_file"].as_str().unwrap().is_empty());
+    assert_eq!(models[0]["source_checksum"].as_str().unwrap().len(), 64);
+    let cm_id = models[0]["id"].as_i64().unwrap();
+
+    // unknown manufacturer / model -> 404
+    let res = call(
+        app.clone(),
+        Method::GET,
+        "/api/catalog/manufacturers/999/models",
+        None,
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::NOT_FOUND);
+    let res = call(app.clone(), Method::GET, "/api/catalog/models/999", None).await;
+    assert_eq!(res.status, StatusCode::NOT_FOUND);
+
+    // catalog model detail: parts with coordinates + null owned quantities
+    let res = call(
+        app.clone(),
+        Method::GET,
+        &format!("/api/catalog/models/{cm_id}"),
+        None,
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::OK);
+    assert_eq!(res.body["model"]["name"], "M1");
+    assert_eq!(res.body["diagram_asset"], "heli-generic.svg");
+    assert!(res.body["linked_models"].as_array().unwrap().is_empty());
+    let parts = res.body["parts"].as_array().unwrap();
+    assert_eq!(parts.len(), 3);
+    assert_eq!(parts[0]["name"], "Main blade grip set");
+    assert_eq!(parts[0]["part_number"], "OSHM1013");
+    assert_eq!(parts[0]["diagram_x"], 37.0);
+    assert_eq!(parts[0]["diagram_y"], 18.0);
+    assert!(parts[1]["part_number"].is_null());
+    assert!(parts[2]["diagram_x"].is_null(), "no coordinates -> null");
+    for p in parts {
+        assert!(
+            p["owned_quantity"].is_null(),
+            "no linked models -> null quantity"
+        );
+    }
+
+    // re-importing the same file short-circuits: unchanged, nothing is even
+    // re-parsed (counts stay zero — the file was skipped by checksum)
+    let result = service.import_catalog_file(&path).await.unwrap();
+    assert!(matches!(
+        result.status,
+        hangar::catalog::ImportStatus::Unchanged
+    ));
+    assert_eq!(result.parts_created, 0);
+    assert_eq!(result.parts_updated, 0);
+    assert!(result.orphaned_parts.is_empty());
+
+    // and the data is untouched
+    let res = call(
+        app,
+        Method::GET,
+        &format!("/api/catalog/models/{cm_id}"),
+        None,
+    )
+    .await;
+    assert_eq!(res.body["parts"].as_array().unwrap().len(), 3);
+}
+
+#[tokio::test]
+async fn catalog_reimport_updates_matches_and_orphans() {
+    let (app, service) = app_with_service().await;
+    let path = write_catalog_file(M1_JSON);
+    service.import_catalog_file(&path).await.unwrap();
+
+    // v2: rename the part-numbered part (matched by number), drop the
+    // hardware bag (orphan), add a new numbered part.
+    let v2 = serde_json::json!({
+        "manufacturer": "OMP Hobby",
+        "model": "M1",
+        "category": "heli",
+        "diagram_asset": "heli-generic.svg",
+        "parts": [
+            {
+                "name": "Main blade grip set v2",
+                "part_number": "OSHM1013",
+                "category": "Blade grip",
+                "diagram_x": 37.0,
+                "diagram_y": 18.0
+            },
+            {
+                "name": "Tail blade grip set",
+                "part_number": null,
+                "category": "Blade grip",
+                "diagram_x": 91.0,
+                "diagram_y": 47.0
+            },
+            { "name": "Canopy", "part_number": "OSHCAN1" }
+        ]
+    })
+    .to_string();
+    std::fs::write(&path, v2).unwrap();
+    let result = service.import_catalog_file(&path).await.unwrap();
+    assert!(matches!(
+        result.status,
+        hangar::catalog::ImportStatus::Updated
+    ));
+    assert!(!result.model_created);
+    assert_eq!(
+        result.parts_updated, 2,
+        "main grip renamed + notes dropped, tail grip notes dropped"
+    );
+    assert_eq!(result.parts_created, 1, "canopy is new");
+    assert_eq!(result.parts_unchanged, 0);
+    assert_eq!(result.orphaned_parts.len(), 1);
+    assert_eq!(result.orphaned_parts[0].1, "Hardware bag");
+
+    // v3: give the name-matched part a part number — it must be matched by
+    // name (its old key) and re-keyed by number, not duplicated.
+    let v3 = serde_json::json!({
+        "manufacturer": "OMP Hobby",
+        "model": "M1",
+        "category": "heli",
+        "diagram_asset": "heli-generic.svg",
+        "parts": [
+            {
+                "name": "Main blade grip set v2",
+                "part_number": "OSHM1013",
+                "category": "Blade grip",
+                "diagram_x": 37.0,
+                "diagram_y": 18.0
+            },
+            {
+                "name": "Tail blade grip set",
+                "part_number": "OSHTBL2",
+                "category": "Blade grip",
+                "diagram_x": 91.0,
+                "diagram_y": 47.0
+            },
+            { "name": "Canopy", "part_number": "OSHCAN1" }
+        ]
+    })
+    .to_string();
+    std::fs::write(&path, v3).unwrap();
+    let result = service.import_catalog_file(&path).await.unwrap();
+    assert_eq!(
+        result.parts_updated, 1,
+        "tail grip matched by name, gained a number"
+    );
+    assert_eq!(result.parts_unchanged, 2);
+    // the hardware bag was orphaned in v2 and is still in the table — it
+    // stays orphaned (orphan rows persist until explicitly deleted)
+    assert_eq!(
+        result
+            .orphaned_parts
+            .iter()
+            .map(|(_, n)| n.as_str())
+            .collect::<Vec<_>>(),
+        vec!["Hardware bag"]
+    );
+
+    // no duplicates: the model still has exactly 3 parts, and the orphan is
+    // still queryable (left in place by design)
+    let mfr_id = {
+        let res = call(app.clone(), Method::GET, "/api/catalog/manufacturers", None).await;
+        res.body.as_array().unwrap()[0]["id"].as_i64().unwrap()
+    };
+    let cm_id = {
+        let res = call(
+            app.clone(),
+            Method::GET,
+            &format!("/api/catalog/manufacturers/{mfr_id}/models"),
+            None,
+        )
+        .await;
+        res.body.as_array().unwrap()[0]["id"].as_i64().unwrap()
+    };
+    let res = call(
+        app,
+        Method::GET,
+        &format!("/api/catalog/models/{cm_id}"),
+        None,
+    )
+    .await;
+    let names: Vec<_> = res.body["parts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| p["name"].as_str().unwrap().to_string())
+        .collect();
+    // (ordered by id: the hardware bag was imported first and survives as
+    // an orphan; canopy arrived in v2)
+    assert_eq!(
+        names,
+        vec![
+            "Main blade grip set v2",
+            "Tail blade grip set",
+            "Hardware bag",
+            "Canopy"
+        ]
+    );
+}
+
+#[tokio::test]
+async fn catalog_orphan_keeps_inventory_links() {
+    let (app, service) = app_with_service().await;
+    let path = write_catalog_file(M1_JSON);
+    service.import_catalog_file(&path).await.unwrap();
+
+    let cm_id = {
+        let res = call(app.clone(), Method::GET, "/api/catalog/manufacturers", None).await;
+        let mfr_id = res.body.as_array().unwrap()[0]["id"].as_i64().unwrap();
+        let res = call(
+            app.clone(),
+            Method::GET,
+            &format!("/api/catalog/manufacturers/{mfr_id}/models"),
+            None,
+        )
+        .await;
+        res.body.as_array().unwrap()[0]["id"].as_i64().unwrap()
+    };
+
+    // create a model, link it, and add the hardware bag (no part number) to inventory
+    let m = call(
+        app.clone(),
+        Method::POST,
+        "/api/models",
+        Some(model_json("My M1", "heli")),
+    )
+    .await;
+    let model_id = id(&m.body);
+    let res = call(
+        app.clone(),
+        Method::POST,
+        &format!("/api/models/{model_id}/link-catalog"),
+        Some(serde_json::json!({ "catalog_model_id": cm_id })),
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::OK);
+
+    let bag_cp_id = {
+        let res = call(
+            app.clone(),
+            Method::GET,
+            &format!("/api/catalog/models/{cm_id}"),
+            None,
+        )
+        .await;
+        res.body["parts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|p| p["name"] == "Hardware bag")
+            .unwrap()["id"]
+            .as_i64()
+            .unwrap()
+    };
+    let res = call(
+        app.clone(),
+        Method::POST,
+        &format!("/api/catalog/parts/{bag_cp_id}/add-to-inventory"),
+        Some(serde_json::json!({ "model_id": model_id, "quantity": 2 })),
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::CREATED);
+    let inv_part_id = id(&res.body);
+
+    // v2 drops the hardware bag: re-import must NOT touch the inventory part
+    let v2 = serde_json::json!({
+        "manufacturer": "OMP Hobby",
+        "model": "M1",
+        "category": "heli",
+        "diagram_asset": "heli-generic.svg",
+        "parts": [
+            {
+                "name": "Main blade grip set",
+                "part_number": "OSHM1013",
+                "category": "Blade grip",
+                "diagram_x": 37.0,
+                "diagram_y": 18.0
+            }
+        ]
+    })
+    .to_string();
+    std::fs::write(&path, v2).unwrap();
+    let result = service.import_catalog_file(&path).await.unwrap();
+    assert_eq!(
+        result
+            .orphaned_parts
+            .iter()
+            .map(|(_, n)| n.as_str())
+            .collect::<Vec<_>>(),
+        vec!["Tail blade grip set", "Hardware bag"]
+    );
+
+    // inventory part survives the re-import, still linked, quantity intact
+    let res = call(
+        app.clone(),
+        Method::GET,
+        &format!("/api/parts/{inv_part_id}"),
+        None,
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::OK);
+    assert_eq!(res.body["part"]["quantity"], 2);
+    assert_eq!(res.body["models"][0]["id"], model_id);
+}
+
+#[tokio::test]
+async fn catalog_invalid_files_do_not_break_the_rest() {
+    let dir = std::env::temp_dir().join(format!(
+        "hangar-catalog-dir-{}-{}",
+        std::process::id(),
+        CATALOG_FILE_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("bad-json.json"), "{ not json").unwrap();
+    std::fs::write(
+        dir.join("bad-category.json"),
+        r#"{"manufacturer":"M","model":"X","category":"spaceship","parts":[]}"#,
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("bad-coords.json"),
+        r#"{"manufacturer":"M","model":"Y","category":"heli","parts":[{"name":"A","diagram_x":150.0,"diagram_y":1.0}]}"#,
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("lonely-x.json"),
+        r#"{"manufacturer":"M","model":"Z","category":"heli","parts":[{"name":"B","diagram_x":10.0}]}"#,
+    )
+    .unwrap();
+    std::fs::write(dir.join("good.json"), M1_JSON).unwrap();
+
+    let (_app, service) = app_with_service().await;
+    let summary = service.import_catalog_dir(&dir).await.unwrap();
+    assert_eq!(summary.files, 5);
+    assert_eq!(summary.created, 1, "the good file still imports");
+    assert_eq!(summary.failed.len(), 4);
+    for (file, err) in &summary.failed {
+        assert!(err.contains(':'), "error carries a field path: {err}");
+        assert!(file.ends_with(".json"));
+    }
+    let files: Vec<_> = summary.failed.iter().map(|(f, _)| f.as_str()).collect();
+    for want in [
+        "bad-json.json",
+        "bad-category.json",
+        "bad-coords.json",
+        "lonely-x.json",
+    ] {
+        assert!(files.contains(&want), "{want} should have failed");
+    }
+
+    // unknown fields are rejected too (typo protection)
+    let bad = write_catalog_file(
+        r#"{"manufacturer":"M","model":"T","category":"heli","parts":[],"typo":1}"#,
+    );
+    let err = service.import_catalog_file(&bad).await.unwrap_err();
+    assert!(err.to_string().contains("typo"), "{err}");
+
+    // a missing directory is not an error
+    let empty = service
+        .import_catalog_dir(std::path::Path::new("/definitely/not/here"))
+        .await
+        .unwrap();
+    assert_eq!(empty.files, 0);
+    assert!(empty.ok());
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[tokio::test]
+async fn catalog_link_unlink_and_model_detail_summary() {
+    let (app, service) = app_with_service().await;
+    let path = write_catalog_file(M1_JSON);
+    service.import_catalog_file(&path).await.unwrap();
+
+    let cm_id = {
+        let res = call(app.clone(), Method::GET, "/api/catalog/manufacturers", None).await;
+        let mfr_id = res.body.as_array().unwrap()[0]["id"].as_i64().unwrap();
+        let res = call(
+            app.clone(),
+            Method::GET,
+            &format!("/api/catalog/manufacturers/{mfr_id}/models"),
+            None,
+        )
+        .await;
+        res.body.as_array().unwrap()[0]["id"].as_i64().unwrap()
+    };
+
+    let heli = call(
+        app.clone(),
+        Method::POST,
+        "/api/models",
+        Some(model_json("My M1", "heli")),
+    )
+    .await;
+    let heli_id = id(&heli.body);
+    let car = call(
+        app.clone(),
+        Method::POST,
+        "/api/models",
+        Some(model_json("Speedy", "car")),
+    )
+    .await;
+    let car_id = id(&car.body);
+
+    // link the heli
+    let res = call(
+        app.clone(),
+        Method::POST,
+        &format!("/api/models/{heli_id}/link-catalog"),
+        Some(serde_json::json!({ "catalog_model_id": cm_id })),
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::OK);
+    assert_eq!(res.body["catalog_model_id"], cm_id);
+
+    // model detail now embeds the catalog summary
+    let res = call(
+        app.clone(),
+        Method::GET,
+        &format!("/api/models/{heli_id}"),
+        None,
+    )
+    .await;
+    assert_eq!(res.body["model"]["catalog_model_id"], cm_id);
+    assert_eq!(res.body["catalog"]["catalog_model_name"], "M1");
+    assert_eq!(res.body["catalog"]["diagram_asset"], "heli-generic.svg");
+
+    // re-linking the same value is an idempotent no-op
+    let res = call(
+        app.clone(),
+        Method::POST,
+        &format!("/api/models/{heli_id}/link-catalog"),
+        Some(serde_json::json!({ "catalog_model_id": cm_id })),
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::OK);
+
+    // category mismatch is rejected
+    let res = call(
+        app.clone(),
+        Method::POST,
+        &format!("/api/models/{car_id}/link-catalog"),
+        Some(serde_json::json!({ "catalog_model_id": cm_id })),
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::BAD_REQUEST);
+    assert_eq!(res.body["error"], "invalid_request");
+    assert!(res.body["message"]
+        .as_str()
+        .unwrap()
+        .contains("category mismatch"));
+    let res = call(
+        app.clone(),
+        Method::GET,
+        &format!("/api/models/{car_id}"),
+        None,
+    )
+    .await;
+    assert!(
+        res.body["model"].get("catalog_model_id").is_none()
+            || res.body["model"]["catalog_model_id"].is_null()
+    );
+
+    // unknown ids -> 404
+    let res = call(
+        app.clone(),
+        Method::POST,
+        &format!("/api/models/{heli_id}/link-catalog"),
+        Some(serde_json::json!({ "catalog_model_id": 999 })),
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::NOT_FOUND);
+    let res = call(
+        app.clone(),
+        Method::POST,
+        "/api/models/999/link-catalog",
+        Some(serde_json::json!({ "catalog_model_id": cm_id })),
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::NOT_FOUND);
+
+    // unlink
+    let res = call(
+        app.clone(),
+        Method::DELETE,
+        &format!("/api/models/{heli_id}/link-catalog"),
+        None,
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::NO_CONTENT);
+    let res = call(
+        app.clone(),
+        Method::GET,
+        &format!("/api/models/{heli_id}"),
+        None,
+    )
+    .await;
+    assert!(res.body["model"]["catalog_model_id"].is_null());
+    assert!(res.body.get("catalog").is_none());
+
+    // unlinking twice -> 404
+    let res = call(
+        app,
+        Method::DELETE,
+        &format!("/api/models/{heli_id}/link-catalog"),
+        None,
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::NOT_FOUND);
+    assert_eq!(res.body["error"], "not_found");
+}
+
+#[tokio::test]
+async fn catalog_add_to_inventory_create_increment_and_scoping() {
+    let (app, service) = app_with_service().await;
+    let path = write_catalog_file(M1_JSON);
+    service.import_catalog_file(&path).await.unwrap();
+
+    let cm_id = {
+        let res = call(app.clone(), Method::GET, "/api/catalog/manufacturers", None).await;
+        let mfr_id = res.body.as_array().unwrap()[0]["id"].as_i64().unwrap();
+        let res = call(
+            app.clone(),
+            Method::GET,
+            &format!("/api/catalog/manufacturers/{mfr_id}/models"),
+            None,
+        )
+        .await;
+        res.body.as_array().unwrap()[0]["id"].as_i64().unwrap()
+    };
+    let grip_cp_id = {
+        let res = call(
+            app.clone(),
+            Method::GET,
+            &format!("/api/catalog/models/{cm_id}"),
+            None,
+        )
+        .await;
+        res.body["parts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|p| p["name"] == "Main blade grip set")
+            .unwrap()["id"]
+            .as_i64()
+            .unwrap()
+    };
+
+    let m = call(
+        app.clone(),
+        Method::POST,
+        "/api/models",
+        Some(model_json("My M1", "heli")),
+    )
+    .await;
+    let model_id = id(&m.body);
+    let res = call(
+        app.clone(),
+        Method::POST,
+        &format!("/api/models/{model_id}/link-catalog"),
+        Some(serde_json::json!({ "catalog_model_id": cm_id })),
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::OK);
+
+    // create (default quantity 1): pre-filled from the catalog entry
+    let res = call(
+        app.clone(),
+        Method::POST,
+        &format!("/api/catalog/parts/{grip_cp_id}/add-to-inventory"),
+        Some(serde_json::json!({ "model_id": model_id })),
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::CREATED);
+    let inv_part_id = id(&res.body);
+    assert_eq!(res.body["name"], "Main blade grip set");
+    assert_eq!(
+        res.body["link"], "OSHM1013",
+        "part_number pre-fills the link field"
+    );
+    assert_eq!(res.body["quantity"], 1);
+
+    // increment (idempotent path): no duplicate, quantity adjusts
+    let res = call(
+        app.clone(),
+        Method::POST,
+        &format!("/api/catalog/parts/{grip_cp_id}/add-to-inventory"),
+        Some(serde_json::json!({ "model_id": model_id, "quantity": 2 })),
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::OK);
+    assert_eq!(
+        id(&res.body),
+        inv_part_id,
+        "same part adjusted, not duplicated"
+    );
+    assert_eq!(res.body["quantity"], 3);
+
+    // delta semantics: negative allowed (clamped at 0), zero rejected
+    let res = call(
+        app.clone(),
+        Method::POST,
+        &format!("/api/catalog/parts/{grip_cp_id}/add-to-inventory"),
+        Some(serde_json::json!({ "model_id": model_id, "quantity": -100 })),
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::OK);
+    assert_eq!(res.body["quantity"], 0, "clamped at 0");
+    let res = call(
+        app.clone(),
+        Method::POST,
+        &format!("/api/catalog/parts/{grip_cp_id}/add-to-inventory"),
+        Some(serde_json::json!({ "model_id": model_id, "quantity": 0 })),
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::BAD_REQUEST);
+
+    // negative starting quantity is rejected on the create path (a catalog
+    // part that does not have an inventory row on this model yet)
+    let res = call(
+        app.clone(),
+        Method::GET,
+        &format!("/api/catalog/models/{cm_id}"),
+        None,
+    )
+    .await;
+    let tail_cp_id = res.body["parts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|p| p["name"] == "Tail blade grip set")
+        .unwrap()["id"]
+        .as_i64()
+        .unwrap();
+    let res = call(
+        app.clone(),
+        Method::POST,
+        &format!("/api/catalog/parts/{tail_cp_id}/add-to-inventory"),
+        Some(serde_json::json!({ "model_id": model_id, "quantity": -1 })),
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::BAD_REQUEST);
+    assert_eq!(res.body["error"], "invalid_request");
+
+    // scoping: a second linked model sees null until it owns something
+    let m2 = call(
+        app.clone(),
+        Method::POST,
+        "/api/models",
+        Some(model_json("Second M1", "heli")),
+    )
+    .await;
+    let model2_id = id(&m2.body);
+    let res = call(
+        app.clone(),
+        Method::POST,
+        &format!("/api/models/{model2_id}/link-catalog"),
+        Some(serde_json::json!({ "catalog_model_id": cm_id })),
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::OK);
+
+    // restock the grip for model 1
+    let res = call(
+        app.clone(),
+        Method::POST,
+        &format!("/api/catalog/parts/{grip_cp_id}/add-to-inventory"),
+        Some(serde_json::json!({ "model_id": model_id, "quantity": 5 })),
+    )
+    .await;
+    assert_eq!(res.body["quantity"], 5);
+
+    // scoped to model 2 -> its own (null) view; unscoped -> sum over both
+    let res = call(
+        app.clone(),
+        Method::GET,
+        &format!("/api/catalog/models/{cm_id}?model_id={model2_id}"),
+        None,
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::OK);
+    let grip2 = res.body["parts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|p| p["name"] == "Main blade grip set")
+        .unwrap();
+    assert_eq!(
+        grip2["owned_quantity"], 0,
+        "model 2 is linked but owns nothing yet -> 0, not null"
+    );
+    assert_eq!(res.body["linked_models"].as_array().unwrap().len(), 2);
+
+    let res = call(
+        app.clone(),
+        Method::GET,
+        &format!("/api/catalog/models/{cm_id}"),
+        None,
+    )
+    .await;
+    let grip_all = res.body["parts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|p| p["name"] == "Main blade grip set")
+        .unwrap();
+    assert_eq!(grip_all["owned_quantity"], 5, "sums over all linked models");
+
+    // unknown scope model -> 404; scoped model not linked -> nulls
+    let res = call(
+        app.clone(),
+        Method::GET,
+        &format!("/api/catalog/models/{cm_id}?model_id=999"),
+        None,
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::NOT_FOUND);
+    let car = call(
+        app.clone(),
+        Method::POST,
+        "/api/models",
+        Some(model_json("Speedy", "car")),
+    )
+    .await;
+    let car_id = id(&car.body);
+    let res = call(
+        app.clone(),
+        Method::GET,
+        &format!("/api/catalog/models/{cm_id}?model_id={car_id}"),
+        None,
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::OK);
+    assert!(res.body["parts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|p| p["owned_quantity"].is_null()));
+
+    // unknown catalog part / model -> 404
+    let res = call(
+        app.clone(),
+        Method::POST,
+        "/api/catalog/parts/999/add-to-inventory",
+        Some(serde_json::json!({ "model_id": model_id })),
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::NOT_FOUND);
+    let res = call(
+        app,
+        Method::POST,
+        &format!("/api/catalog/parts/{grip_cp_id}/add-to-inventory"),
+        Some(serde_json::json!({ "model_id": 999 })),
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn catalog_part_delete_keeps_inventory() {
+    let (app, service) = app_with_service().await;
+    let path = write_catalog_file(M1_JSON);
+    service.import_catalog_file(&path).await.unwrap();
+
+    let cm_id = {
+        let res = call(app.clone(), Method::GET, "/api/catalog/manufacturers", None).await;
+        let mfr_id = res.body.as_array().unwrap()[0]["id"].as_i64().unwrap();
+        let res = call(
+            app.clone(),
+            Method::GET,
+            &format!("/api/catalog/manufacturers/{mfr_id}/models"),
+            None,
+        )
+        .await;
+        res.body.as_array().unwrap()[0]["id"].as_i64().unwrap()
+    };
+    let grip_cp_id = {
+        let res = call(
+            app.clone(),
+            Method::GET,
+            &format!("/api/catalog/models/{cm_id}"),
+            None,
+        )
+        .await;
+        res.body["parts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|p| p["name"] == "Main blade grip set")
+            .unwrap()["id"]
+            .as_i64()
+            .unwrap()
+    };
+
+    let m = call(
+        app.clone(),
+        Method::POST,
+        "/api/models",
+        Some(model_json("My M1", "heli")),
+    )
+    .await;
+    let model_id = id(&m.body);
+    let res = call(
+        app.clone(),
+        Method::POST,
+        &format!("/api/catalog/parts/{grip_cp_id}/add-to-inventory"),
+        Some(serde_json::json!({ "model_id": model_id, "quantity": 4 })),
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::CREATED);
+    let inv_part_id = id(&res.body);
+
+    // admin delete of the catalog part
+    let res = call(
+        app.clone(),
+        Method::DELETE,
+        &format!("/api/catalog/parts/{grip_cp_id}"),
+        None,
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::NO_CONTENT);
+    let res = call(
+        app.clone(),
+        Method::DELETE,
+        &format!("/api/catalog/parts/{grip_cp_id}"),
+        None,
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::NOT_FOUND);
+
+    // inventory part survives, still linked, but the trace link is gone
+    let res = call(
+        app.clone(),
+        Method::GET,
+        &format!("/api/parts/{inv_part_id}"),
+        None,
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::OK);
+    assert_eq!(res.body["part"]["quantity"], 4);
+    assert_eq!(res.body["models"][0]["id"], model_id);
+    let res = call(
+        app.clone(),
+        Method::GET,
+        &format!("/api/catalog/models/{cm_id}"),
+        None,
+    )
+    .await;
+    assert!(!res.body["parts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|p| p["name"] == "Main blade grip set"));
 }

@@ -3,10 +3,11 @@
 
 pub mod sqlite;
 
+use crate::catalog::{CatalogFile, CatalogImportResult};
 use crate::error::DomainError;
 use crate::types::{
-    Category, Model, ModelInput, ModelListRow, Part, PartBulkEdit, PartDetail, PartInput,
-    PartListRow, PartSort, Settings, UsageRecord,
+    CatalogManufacturer, CatalogModel, CatalogPart, Category, Model, ModelInput, ModelListRow,
+    Part, PartBulkEdit, PartDetail, PartInput, PartListRow, PartSort, Settings, UsageRecord,
 };
 use async_trait::async_trait;
 
@@ -90,6 +91,86 @@ pub trait HangarRepo: Send + Sync {
     async fn get_settings(&self) -> Result<Option<Settings>, DomainError>;
     /// Upserts the full settings document.
     async fn save_settings(&self, settings: &Settings) -> Result<(), DomainError>;
+
+    // -- Reference catalog ----------------------------------------------------
+
+    /// Upserts a manufacturer/model/parts set from one parsed catalog file,
+    /// keyed by `(manufacturer, model)`. Parts are matched by `part_number`
+    /// when present, else by (case-insensitive) name. NEVER deletes rows:
+    /// parts missing from the file are reported as orphans instead.
+    async fn import_catalog_file(
+        &self,
+        source_file: &str,
+        checksum: &str,
+        file: &CatalogFile,
+    ) -> Result<CatalogImportResult, DomainError>;
+    /// Finds the catalog model imported from `source_file` whose stored
+    /// checksum already equals `checksum` (re-import short-circuit).
+    async fn find_catalog_model_by_source(
+        &self,
+        source_file: &str,
+        checksum: &str,
+    ) -> Result<Option<CatalogModel>, DomainError>;
+
+    async fn list_catalog_manufacturers(&self) -> Result<Vec<CatalogManufacturer>, DomainError>;
+    async fn catalog_manufacturer_exists(&self, id: i64) -> Result<bool, DomainError>;
+    /// Empty list for an unknown manufacturer id (caller 404s via
+    /// `catalog_manufacturer_exists`).
+    async fn list_catalog_models(
+        &self,
+        manufacturer_id: i64,
+    ) -> Result<Vec<CatalogModel>, DomainError>;
+    async fn get_catalog_model(&self, id: i64) -> Result<Option<CatalogModel>, DomainError>;
+    async fn list_catalog_parts(
+        &self,
+        catalog_model_id: i64,
+    ) -> Result<Vec<CatalogPart>, DomainError>;
+    async fn get_catalog_part(&self, id: i64) -> Result<Option<CatalogPart>, DomainError>;
+    /// Explicit admin deletion of one catalog part. Inventory parts keep
+    /// existing; their `catalog_part_id` is set to NULL (schema-level
+    /// `ON DELETE SET NULL`).
+    async fn delete_catalog_part(&self, id: i64) -> Result<bool, DomainError>;
+
+    /// Sets (or clears, with `None`) the user model's catalog link.
+    async fn set_model_catalog_link(
+        &self,
+        model_id: i64,
+        catalog_model_id: Option<i64>,
+    ) -> Result<(), DomainError>;
+
+    /// The inventory part tied to `catalog_part_id` that is linked to
+    /// `model_id`, if any (add-to-inventory idempotency check).
+    async fn find_linked_inventory_part(
+        &self,
+        catalog_part_id: i64,
+        model_id: i64,
+    ) -> Result<Option<Part>, DomainError>;
+    /// Creates an inventory part pre-filled from a catalog entry and links
+    /// it to the model in one transaction.
+    async fn create_part_from_catalog(
+        &self,
+        catalog_part_id: i64,
+        name: &str,
+        link: Option<&str>,
+        quantity: i32,
+        model_id: i64,
+    ) -> Result<Part, DomainError>;
+    /// For every catalog part of `catalog_model_id`, the sum of quantities
+    /// of inventory parts tied to it that are linked to one of `model_ids`.
+    /// An empty `model_ids` yields an empty map.
+    async fn catalog_owned_quantities(
+        &self,
+        catalog_model_id: i64,
+        model_ids: &[i64],
+    ) -> Result<std::collections::BTreeMap<i64, i32>, DomainError>;
+    /// The user models linked to a catalog model, ordered by name.
+    async fn list_models_for_catalog_model(
+        &self,
+        catalog_model_id: i64,
+    ) -> Result<Vec<(i64, String)>, DomainError>;
+    /// `(model id, model name, source_file)` for every catalog model — used
+    /// at import time to warn about source files that no longer exist.
+    async fn list_catalog_model_sources(&self) -> Result<Vec<(i64, String, String)>, DomainError>;
 }
 
 /// Convenience for tests and app wiring.

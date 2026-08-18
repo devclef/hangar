@@ -5,6 +5,8 @@
   import type { Route } from './lib/router';
   import ModelsPage from './routes/ModelsPage.svelte';
   import ModelDetail from './routes/ModelDetail.svelte';
+  import CatalogPage from './routes/CatalogPage.svelte';
+  import CatalogModelPage from './routes/CatalogModelPage.svelte';
   import ModelFormPage from './routes/ModelFormPage.svelte';
   import PartListPage from './routes/PartListPage.svelte';
   import PartDetail from './routes/PartDetail.svelte';
@@ -61,6 +63,7 @@
 
   const isModel = $derived(route.page.startsWith('model'));
   const isPart = $derived(route.page.startsWith('part'));
+  const isCatalog = $derived(route.page === 'catalog' || route.page === 'catalog-model');
   const isUsage = $derived(route.page === 'usage');
   const isSettings = $derived(route.page === 'settings');
 </script>
@@ -100,6 +103,14 @@
             : 'text-zinc-300 hover:bg-zinc-800/60 hover:text-white'}"
         >
           Parts
+        </a>
+        <a
+          href="#/catalog"
+          class="nav-link {isCatalog
+            ? 'bg-zinc-800 text-amber-300'
+            : 'text-zinc-300 hover:bg-zinc-800/60 hover:text-white'}"
+        >
+          Catalog
         </a>
         <a
           href="#/usage"
@@ -179,6 +190,10 @@
       <PartDetail id={route.id} />
     {:else if route.page === 'part-form'}
       <PartFormPage id={route.id} />
+    {:else if route.page === 'catalog'}
+      <CatalogPage />
+    {:else if route.page === 'catalog-model'}
+      <CatalogModelPage id={route.id} />
     {:else if route.page === 'usage'}
       <UsagePage />
     {:else if route.page === 'settings'}

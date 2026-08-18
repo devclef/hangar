@@ -47,6 +47,7 @@ STATIC_DIR=frontend/dist cargo run   # then open http://localhost:8080
 | `DATA_DIR`    | `./data`    | Directory for the SQLite file (created if missing).    |
 | `STATIC_DIR`  | `./static`  | Frontend build output to serve (set to `frontend/dist` in local prod mode, `/app/static` in Docker). |
 | `DATABASE_URL`| `sqlite://$DATA_DIR/hangar.db?mode=rwc` | Override the database location.   |
+| `CATALOG_DIR` | `./catalog-data`  | Directory of parts-catalog source files, imported into the DB at startup (and by `cargo run -- import-catalog`). |
 | `RUST_LOG`    | `hangar=info,tower_http=info` | Logging filter (e.g. `debug`).        |
 
 ### Tests
@@ -74,7 +75,7 @@ All endpoints are under `/api` and use JSON. Errors have the shape
 | ------ | ------------------------ | ----------- |
 | GET    | `/api/models`            | List models. Query params: `q` (name/manufacturer/notes substring), `category` (`heli\|plane\|car\|drone\|boat\|other`). Each row includes `part_count`. |
 | POST   | `/api/models`            | Create a model. Body: `name`*, `category`*, `manufacturer?`, `notes?`, `date_acquired?` (YYYY-MM-DD), `status?` (`active\|retired\|sold`, default `active`), `photo_url?`. Returns 201. |
-| GET    | `/api/models/:id`        | Model detail: `{model, parts[]}` where `parts` are the linked parts with live quantities. This is the "what do I have for this model?" endpoint. |
+| GET    | `/api/models/:id`        | Model detail: `{model, parts[]}` where `parts` are the linked parts with live quantities. This is the "what do I have for this model?" endpoint. `model` includes `catalog_model_id` (when linked), and a `catalog` summary (`catalog_model_name`, `diagram_asset`) is embedded so the detail page can show the "known parts / diagram" section without a second round trip. |
 | PUT    | `/api/models/:id`        | Full replace update (same body as create). |
 | DELETE | `/api/models/:id`        | Delete model (its links are removed; parts remain in inventory). |
 
@@ -86,6 +87,13 @@ All endpoints are under `/api` and use JSON. Errors have the shape
 | POST   | `/api/models/:id/parts`           | Link one part. Body: `{"part_id": 3}`. Idempotent (204). |
 | PUT    | `/api/models/:id/parts`           | Replace the full link set. Body: `{"part_ids": [3, 5]}`. 404 if any part id is unknown (set is left unchanged). |
 | DELETE | `/api/models/:id/parts/:part_id`  | Unlink one part. 404 if not linked. |
+
+### Model ↔ catalog links
+
+| Method | Path                          | Description |
+| ------ | ----------------------------- | ----------- |
+| POST   | `/api/models/:id/link-catalog` | Links (or re-points) a model to a reference catalog model. Body: `{"catalog_model_id": N}`. 404 for unknown ids; 400 when the categories don't match. Re-linking the same model is an idempotent no-op. Returns the updated model. |
+| DELETE | `/api/models/:id/link-catalog` | Unlinks. 404 when the model has no catalog link. |
 
 ### Parts
 
@@ -115,6 +123,22 @@ and cascade when their part or model is deleted.
 | POST   | `/api/parts/:id/usage`   | Record usage of this part. Body: `model_id`*, `quantity?` (≥ 1, default 1), `notes?` (e.g. "replaced pitch rods"), `used_at?` (`YYYY-MM-DD` or `YYYY-MM-DDTHH:MM:SS`; defaults to now). Returns 201 with the entry. |
 | POST   | `/api/models/:id/usage`  | Record usage on this model. Body: `part_id`* plus the same optional fields as above. Returns 201 with the entry. |
 
+### Parts catalog
+
+Reference catalog of known manufacturer/model combinations and their official
+parts, imported from the versioned files in `catalog-data/` (see
+`catalog-data/README.md` for the file format and how to add a model). Catalog
+rows are created/refreshed by the importer only — at startup and via
+`cargo run -- import-catalog [path]` — not by request bodies.
+
+| Method | Path                                        | Description |
+| ------ | ------------------------------------------- | ----------- |
+| GET    | `/api/catalog/manufacturers`                | List catalog manufacturers, each with `model_count`. |
+| GET    | `/api/catalog/manufacturers/:id/models`     | Catalog models for a manufacturer. 404 for an unknown manufacturer. |
+| GET    | `/api/catalog/models/:id`                   | Catalog model detail: `{model, diagram_asset, linked_models[], parts[]}`. Each part carries its diagram coordinates and `owned_quantity` — the live sum over the inventory parts tied to that catalog part (`parts.catalog_part_id`) and linked to the user models linked to this catalog model; `null` when no user model is linked. Optional query param `model_id` scopes the quantities to one specific user model (still `null` if that model isn't linked). |
+| POST   | `/api/catalog/parts/:id/add-to-inventory`   | One-click add to a model's inventory. Body: `{"model_id": N, "quantity"?: number}`. Creates a `parts` row pre-filled from the catalog entry (`name`, `part_number` → the part's `link` field, `catalog_part_id` set) and links it to the model (201); if that catalog part is already tied to an inventory part on the model, adjusts that part's quantity by `quantity` instead (delta semantics, clamped at 0, default +1; 200). 404 for unknown ids, 400 for a zero/negative start on the create path. |
+| DELETE | `/api/catalog/parts/:id`                    | Explicit admin deletion of a catalog part (orphan cleanup). Inventory parts keep existing; their `catalog_part_id` becomes `null`. 404 for an unknown id. |
+
 ### Settings
 
 | Method | Path           | Description |
@@ -135,6 +159,9 @@ curl -s localhost:8080/api/models/1
 - `#/models` — list, search, category filter chips, linked-part counts.
 - `#/models/:id` — model detail: all linked parts with quantities (inline +/− stepper), link/unlink parts.
 - `#/models/new`, `#/models/:id/edit` — add/edit forms.
+- `#/catalog` — parts catalog: browse manufacturers → models (with their source files).
+- `#/catalog/models/:id` — a catalog model's generic diagram with numbered, color-coded hotspot pins (gray = not in inventory, green = in stock, amber = low, red = out) plus a parts list showing part numbers, groups, live owned quantities, and a one-click "add to inventory" action (targets your model(s) linked to this catalog model).
+- The model detail page also has a **Catalog** section: linked models show the same diagram + parts view scoped to that model's quantities (plus unlink); unlinked models get a "link to catalog model" picker filtered to matching categories.
 - `#/parts` — all parts, searchable, sortable (defaults to quantity low→high so out-of-stock floats to the top; 0 shows an "out" badge, and at-or-below the configured low-stock threshold a "low" badge). Rows are checkbox-selectable; selecting one or more opens a **bulk edit** panel that changes any of the part fields (set or clear) on every selected part at once, and links/unlinks a chosen model across the selection.
 - `#/parts/:id` — part detail: quantity stepper, compatible models, link/unlink models.
 - `#/parts/new`, `#/parts/:id/edit` — add/edit forms.
@@ -160,24 +187,34 @@ Things the brief left open and how they were resolved:
 - **Static serving:** the backend serves the built SPA itself (hashed assets cached immutably, `index.html` no-cache) and returns JSON 404s for unknown `/api/*` paths. The SPA uses hash routing, so no server-side route fallback is needed.
 - **Single process, no auth:** per the brief — one user, trusted network. SQLite pool is single-connection (WAL) which fits that profile and avoids `SQLITE_BUSY` entirely.
 - **Postgres path:** everything below the HTTP handlers goes through `HangarRepo`/`ServiceApi` traits; a Postgres implementation would be a new module plus a feature flag, no route/service changes.
+- **Catalog data lives in files, not migrations:** the parts catalog is imported from versioned, human-editable JSON files under `catalog-data/` (one file per model: `<manufacturer-slug>/<model-slug>.json`) into `catalog_manufacturers`/`catalog_models`/`catalog_parts`. Adding a model is "drop a file in the repo and restart" — no schema change, no code change, no manual admin step. The machine-readable format is `catalog-data/schema.json`; the Rust importer (`src/catalog.rs`) enforces the same rules with `file: field: message` errors and rejects unknown fields, so a typo in a hand-written file can't slip through.
+- **JSON over CSV for catalog files:** the user floated CSV as an option; JSON won because the format is inherently nested and sparse (per-part diagram coordinates, optional part numbers/categories/notes) — CSV would need a wide table with mostly-empty columns and awkward escaping for multi-line notes, while JSON maps 1:1 onto the rows and validates structurally. One file per model keeps diffs tiny and reviews obvious.
+- **Catalog import: idempotent upserts, never auto-delete:** re-imports match parts by `part_number` (exact) with a fallback to the unnumbered same-name row (so filling in a part number later re-keys the row instead of duplicating it); name-only parts match by case-insensitive name. Rows missing from a newer file version are **left in place** (with any inventory links intact) and logged as orphans for manual review/deletion via `DELETE /api/catalog/parts/:id` — this protects a user's inventory from a typo in a source file. The stored sha256 checksum short-circuits re-imports of unchanged files (they aren't even re-parsed). Invalid files are logged and skipped, never fatal to startup.
+- **Import runs at startup (and via `import-catalog` CLI):** matches the single-user/self-hosted spirit — there is no "catalog admin UI" to keep in sync; the files in the repo are the source of truth and the DB is a materialized view of them. `cargo run -- import-catalog [file|dir]` covers ad-hoc re-imports and pre-commit validation of a new file (non-zero exit on any failure).
+- **Placeholder example data:** `catalog-data/omp-hobby/m1.json` exists to prove the file → import → diagram pipeline end to end. Part *names* and diagram positions are plausible, but every `part_number` is deliberately `null` with a "placeholder — part number pending verification" note. **TODO (follow-up pass): research and populate the official OMP M1 part numbers in place.**
+- **Catalog link & quantity semantics:** `models.catalog_model_id` is set only via `POST/DELETE /api/models/:id/link-catalog` (which validates category equality); `PUT /api/models/:id` deliberately does not touch it, so full-replace updates never wipe a catalog link. `owned_quantity` on `GET /api/catalog/models/:id` is `null` when no user model is linked (nothing to count against) and a live integer (0 when linked but not owned) otherwise; the optional `?model_id=` scopes it to one model. Add-to-inventory is idempotent per (catalog part, model): first call creates, later calls adjust the existing part's quantity (clamped at 0), so the same catalog part never yields duplicate inventory rows.
+- **Generic diagrams per category:** real official diagrams are copyrighted and unobtainable, so the viewer renders generic hand-drawn SVG silhouettes from `frontend/src/lib/diagrams/` (`heli-generic.svg` is the real thing; other categories are simple placeholders) with the SVG text inlined at build time (`import.meta.glob(...?raw)`) — no extra requests, works in dev and prod. `diagram_asset` on a catalog model is a per-model override (e.g. a photo-based diagram later); when null/unknown the viewer falls back to `<category>-generic.svg`. Hotspot coordinates are percentages of the image (the SVGs use a 100×60 viewBox, so viewBox `(x, y)` → `diagram_x: x, diagram_y: y*100/60`).
 - **Error contract:** deserialization failures (bad JSON, unknown enum values, bad path params) are mapped to the same structured 400 responses as domain validation, so clients can rely on one error shape.
 
 ## Project layout
 
 ```
 ├── Cargo.toml            # backend crate (bin `hangar` + lib for tests)
-├── migrations/           # sqlx migrations (0001_init.sql)
+├── migrations/           # sqlx migrations (0001_init … 0007_catalog)
+├── catalog-data/         # parts-catalog source files (imported at startup; see its README)
 ├── src/
-│   ├── main.rs           # boot: env, pool, migrations, serve
+│   ├── main.rs           # boot: env, pool, migrations, catalog import, serve (+ import-catalog CLI)
 │   ├── lib.rs            # library root
 │   ├── routes.rs         # axum router + handlers (thin)
 │   ├── service.rs        # business rules behind ServiceApi trait
 │   ├── repo/             # HangarRepo trait + SqliteRepo
+│   ├── catalog.rs        # catalog file format, validation, checksum, import
 │   ├── types.rs          # domain types, inputs, validation
 │   ├── error.rs          # DomainError → JSON error responses
 │   └── web.rs            # static SPA serving + API 404s
 ├── tests/api.rs          # end-to-end API tests (in-memory SQLite)
 ├── frontend/             # Svelte 5 + Vite + TS + Tailwind SPA
+│   └── src/lib/diagrams/ # generic per-category SVG diagrams (heli, plane, car, drone, boat, other)
 ├── Dockerfile            # multi-stage: node build → rust build → slim runtime
 └── docker-compose.yml    # single service + persistent hangar-data volume
 ```

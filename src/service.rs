@@ -3,17 +3,20 @@
 //! this layer is what the API handlers talk to.
 
 use std::collections::BTreeSet;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use sqlx::SqlitePool;
 
+use crate::catalog::{self, CatalogImportResult, CatalogImportSummary};
 use crate::error::{DomainError, NotFound};
 use crate::repo::sqlite::SqliteRepo;
 use crate::repo::HangarRepo;
 use crate::types::{
-    Model, ModelDetail, ModelInput, Part, PartBulkEdit, PartDetail, PartInput, PartListRow,
-    PartSort, Settings, UsageInput, UsageRecord,
+    CatalogLinkedModel, CatalogManufacturer, CatalogModel, CatalogModelDetail, CatalogModelSummary,
+    CatalogPartView, Model, ModelDetail, ModelInput, Part, PartBulkEdit, PartDetail, PartInput,
+    PartListRow, PartSort, Settings, UsageInput, UsageRecord,
 };
 
 #[async_trait]
@@ -79,6 +82,62 @@ pub trait ServiceApi: Send + Sync {
     async fn get_settings(&self) -> Result<Settings, DomainError>;
     /// Validates and stores the full settings document; returns what was stored.
     async fn update_settings(&self, settings: Settings) -> Result<Settings, DomainError>;
+
+    // -- Reference catalog ----------------------------------------------------
+
+    async fn list_catalog_manufacturers(&self) -> Result<Vec<CatalogManufacturer>, DomainError>;
+    async fn list_catalog_models(
+        &self,
+        manufacturer_id: i64,
+    ) -> Result<Vec<CatalogModel>, DomainError>;
+    /// `scope_model_id` (optional) restricts each part's `owned_quantity` to
+    /// the inventory tied to that one user model; omitted means "sum over all
+    /// user models linked to this catalog model". When no user model is
+    /// linked (or the scoped model isn't), every quantity is `None`.
+    async fn get_catalog_model_detail(
+        &self,
+        id: i64,
+        scope_model_id: Option<i64>,
+    ) -> Result<CatalogModelDetail, DomainError>;
+    /// Links (or re-points) a user model to a catalog model. POST with
+    /// replace semantics: the link is single-valued, so replacing it is a
+    /// full replace — same family of semantics as `PUT`, but expressed as an
+    /// action because there is no "catalog link" body to PUT.
+    async fn link_model_catalog(
+        &self,
+        model_id: i64,
+        catalog_model_id: i64,
+    ) -> Result<Model, DomainError>;
+    async fn unlink_model_catalog(&self, model_id: i64) -> Result<(), DomainError>;
+    /// Explicit admin deletion of a catalog part (orphan cleanup). Inventory
+    /// parts keep existing; their trace link is set to NULL.
+    async fn delete_catalog_part(&self, id: i64) -> Result<(), DomainError>;
+    /// Adds a catalog part to a user model's inventory: creates the part
+    /// pre-filled from the catalog entry, or — when the same catalog part is
+    /// already tied to an inventory part on that model — adjusts that part's
+    /// quantity by `quantity` (delta semantics, clamped at 0). Returns the
+    /// part and whether it was newly created.
+    async fn add_catalog_part_to_inventory(
+        &self,
+        catalog_part_id: i64,
+        model_id: i64,
+        quantity: Option<i64>,
+    ) -> Result<(bool, Part), DomainError>;
+
+    // -- Catalog import ---------------------------------------------------------
+
+    /// Imports one catalog file (see `catalog-data/README.md`). Used at
+    /// startup, by the `import-catalog` CLI, and by tests.
+    async fn import_catalog_file(
+        &self,
+        path: &std::path::Path,
+    ) -> Result<CatalogImportResult, DomainError>;
+    /// Imports every `*.json` under `root`; per-file failures are collected,
+    /// never fatal.
+    async fn import_catalog_dir(
+        &self,
+        root: &std::path::Path,
+    ) -> Result<CatalogImportSummary, DomainError>;
 }
 
 /// The concrete, trait-backed service used by the app and tests.
@@ -128,7 +187,25 @@ impl ServiceApi for Service {
     async fn get_model_detail(&self, id: i64) -> Result<ModelDetail, DomainError> {
         let model = self.require_model(self.repo.get_model(id).await?, id)?;
         let parts = self.repo.list_model_parts(id).await?;
-        Ok(ModelDetail { model, parts })
+        // Embedded summary only (no parts list): the full catalog parts stay
+        // on GET /api/catalog/models/:id so this hot path stays cheap.
+        let catalog = match model.catalog_model_id {
+            Some(cm_id) => {
+                self.repo
+                    .get_catalog_model(cm_id)
+                    .await?
+                    .map(|cm| CatalogModelSummary {
+                        catalog_model_name: cm.name,
+                        diagram_asset: cm.diagram_asset,
+                    })
+            }
+            None => None,
+        };
+        Ok(ModelDetail {
+            model,
+            parts,
+            catalog,
+        })
     }
 
     async fn create_model(&self, input: ModelInput) -> Result<Model, DomainError> {
@@ -302,6 +379,214 @@ impl ServiceApi for Service {
         let settings = settings.validate()?;
         self.repo.save_settings(&settings).await?;
         Ok(settings)
+    }
+
+    async fn list_catalog_manufacturers(&self) -> Result<Vec<CatalogManufacturer>, DomainError> {
+        self.repo.list_catalog_manufacturers().await
+    }
+
+    async fn list_catalog_models(
+        &self,
+        manufacturer_id: i64,
+    ) -> Result<Vec<CatalogModel>, DomainError> {
+        if !self
+            .repo
+            .catalog_manufacturer_exists(manufacturer_id)
+            .await?
+        {
+            return Err(DomainError::NotFound(NotFound::CatalogManufacturer(
+                manufacturer_id,
+            )));
+        }
+        self.repo.list_catalog_models(manufacturer_id).await
+    }
+
+    async fn get_catalog_model_detail(
+        &self,
+        id: i64,
+        scope_model_id: Option<i64>,
+    ) -> Result<CatalogModelDetail, DomainError> {
+        let model = self
+            .repo
+            .get_catalog_model(id)
+            .await?
+            .ok_or_else(|| DomainError::NotFound(NotFound::CatalogModel(id)))?;
+
+        let linked = self.repo.list_models_for_catalog_model(id).await?;
+
+        // Which user model(s) do owned quantities count against?
+        let scope_ids: Vec<i64> = match scope_model_id {
+            Some(mid) => match self.repo.get_model(mid).await? {
+                Some(m) if m.catalog_model_id == Some(id) => vec![mid],
+                // Exists but not linked to this catalog model: treat as
+                // "no link" (all quantities null) rather than erroring — the
+                // link can go stale between page loads.
+                Some(_) => Vec::new(),
+                None => return Err(DomainError::NotFound(NotFound::Model(mid))),
+            },
+            None => linked.iter().map(|(mid, _)| *mid).collect(),
+        };
+
+        let quantities = if scope_ids.is_empty() {
+            None
+        } else {
+            Some(self.repo.catalog_owned_quantities(id, &scope_ids).await?)
+        };
+
+        let parts = self.repo.list_catalog_parts(id).await?;
+        let views: Vec<CatalogPartView> = parts
+            .into_iter()
+            .map(|part| CatalogPartView {
+                owned_quantity: quantities.as_ref().and_then(|q| q.get(&part.id)).copied(),
+                part,
+            })
+            .collect();
+        let linked_models = linked
+            .into_iter()
+            .map(|(mid, name)| CatalogLinkedModel { id: mid, name })
+            .collect();
+
+        Ok(CatalogModelDetail {
+            diagram_asset: model.diagram_asset.clone(),
+            linked_models,
+            parts: views,
+            model,
+        })
+    }
+
+    async fn link_model_catalog(
+        &self,
+        model_id: i64,
+        catalog_model_id: i64,
+    ) -> Result<Model, DomainError> {
+        let model = self.require_model(self.repo.get_model(model_id).await?, model_id)?;
+        let cm = self
+            .repo
+            .get_catalog_model(catalog_model_id)
+            .await?
+            .ok_or_else(|| DomainError::NotFound(NotFound::CatalogModel(catalog_model_id)))?;
+        if cm.category != model.category {
+            return Err(DomainError::Invalid(format!(
+                "category mismatch: model {model_id} is `{}` but catalog model {} (\"{}\") is `{}` — a catalog model\'s parts are only meaningful for the same vehicle type",
+                model.category, cm.id, cm.name, cm.category
+            )));
+        }
+        // Replace semantics: the model had at most one catalog link, and
+        // setting the same value again is a no-op — idempotent by nature.
+        self.repo
+            .set_model_catalog_link(model_id, Some(catalog_model_id))
+            .await?;
+        self.require_model(self.repo.get_model(model_id).await?, model_id)
+    }
+
+    async fn unlink_model_catalog(&self, model_id: i64) -> Result<(), DomainError> {
+        let model = self.require_model(self.repo.get_model(model_id).await?, model_id)?;
+        if model.catalog_model_id.is_none() {
+            return Err(DomainError::NotFound(NotFound::CatalogLink { model_id }));
+        }
+        self.repo.set_model_catalog_link(model_id, None).await?;
+        Ok(())
+    }
+
+    async fn delete_catalog_part(&self, id: i64) -> Result<(), DomainError> {
+        if !self.repo.delete_catalog_part(id).await? {
+            return Err(DomainError::NotFound(NotFound::CatalogPart(id)));
+        }
+        Ok(())
+    }
+
+    async fn add_catalog_part_to_inventory(
+        &self,
+        catalog_part_id: i64,
+        model_id: i64,
+        quantity: Option<i64>,
+    ) -> Result<(bool, Part), DomainError> {
+        let cp = self
+            .repo
+            .get_catalog_part(catalog_part_id)
+            .await?
+            .ok_or_else(|| DomainError::NotFound(NotFound::CatalogPart(catalog_part_id)))?;
+        self.require_model(self.repo.get_model(model_id).await?, model_id)?;
+
+        let delta = quantity.unwrap_or(1);
+        // Idempotency: the same catalog part tied to an inventory part that
+        // is already linked to this model is ADJUSTED (delta semantics,
+        // clamped at 0 by the repo SQL — same as POST /api/parts/:id/quantity),
+        // never duplicated.
+        if let Some(existing) = self
+            .repo
+            .find_linked_inventory_part(catalog_part_id, model_id)
+            .await?
+        {
+            if delta == 0 {
+                return Err(DomainError::Invalid("quantity: must be non-zero".into()));
+            }
+            if delta.abs() > i64::MAX / 4 {
+                return Err(DomainError::Invalid("quantity: too large".into()));
+            }
+            let part = self.require_part(
+                self.repo.adjust_quantity(existing.id, delta).await?,
+                existing.id,
+            )?;
+            return Ok((false, part));
+        }
+
+        // Fresh creation: quantity here is an absolute starting count (>= 0).
+        if delta < 0 {
+            return Err(DomainError::Invalid(
+                "quantity: must be zero or a positive integer".into(),
+            ));
+        }
+        if delta > i32::MAX as i64 {
+            return Err(DomainError::Invalid(
+                "quantity: too large (max 2147483647)".into(),
+            ));
+        }
+        let part = self
+            .repo
+            .create_part_from_catalog(
+                catalog_part_id,
+                &cp.name,
+                cp.part_number.as_deref(),
+                delta as i32,
+                model_id,
+            )
+            .await?;
+        Ok((true, part))
+    }
+
+    async fn import_catalog_file(
+        &self,
+        path: &std::path::Path,
+    ) -> Result<CatalogImportResult, DomainError> {
+        // Anchor the source_file identity: a file inside the default catalog
+        // directory keeps its repo-relative path (so CLI and startup imports
+        // of the same file short-circuit against the same stored row);
+        // anything else is identified by its bare file name.
+        let root = match path.canonicalize() {
+            Ok(canon) => match catalog::default_catalog_dir().canonicalize() {
+                // Canonical on both sides so the stripped `source_file`
+                // identity is the same whether the file is imported by the
+                // startup scan, the CLI, or a test.
+                Ok(defc) if canon.starts_with(&defc) => defc,
+                _ => canon
+                    .parent()
+                    .map(PathBuf::from)
+                    .unwrap_or_else(|| PathBuf::from(".")),
+            },
+            Err(_) => path
+                .parent()
+                .map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from(".")),
+        };
+        catalog::import_file(&*self.repo, &root, path).await
+    }
+
+    async fn import_catalog_dir(
+        &self,
+        root: &std::path::Path,
+    ) -> Result<CatalogImportSummary, DomainError> {
+        catalog::import_dir(&*self.repo, root).await
     }
 }
 

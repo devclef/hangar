@@ -22,6 +22,10 @@ pub enum NotFound {
     Model(i64),
     Part(i64),
     Link { model_id: i64, part_id: i64 },
+    CatalogManufacturer(i64),
+    CatalogModel(i64),
+    CatalogPart(i64),
+    CatalogLink { model_id: i64 },
 }
 
 impl fmt::Display for NotFound {
@@ -31,6 +35,12 @@ impl fmt::Display for NotFound {
             NotFound::Part(id) => write!(f, "part {id}"),
             NotFound::Link { model_id, part_id } => {
                 write!(f, "part {part_id} is not linked to model {model_id}")
+            }
+            NotFound::CatalogManufacturer(id) => write!(f, "catalog manufacturer {id}"),
+            NotFound::CatalogModel(id) => write!(f, "catalog model {id}"),
+            NotFound::CatalogPart(id) => write!(f, "catalog part {id}"),
+            NotFound::CatalogLink { model_id } => {
+                write!(f, "model {model_id} is not linked to a catalog model")
             }
         }
     }

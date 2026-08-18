@@ -14,6 +14,63 @@ export interface Model {
   status: ModelStatus;
   photo_url: string | null;
   part_count?: number;
+  /** Linked reference catalog model, when set. */
+  catalog_model_id?: number | null;
+}
+
+export interface ModelDetail {
+  model: Model;
+  parts: Part[];
+  /** Set when the model is linked to a reference catalog model. */
+  catalog?: { catalog_model_name: string; diagram_asset: string | null } | null;
+}
+
+// Reference catalog ---------------------------------------------------------
+
+export interface CatalogManufacturer {
+  id: number;
+  name: string;
+  notes: string | null;
+  model_count: number;
+}
+
+export interface CatalogModel {
+  id: number;
+  manufacturer_id: number;
+  manufacturer: string;
+  name: string;
+  category: Category;
+  /** Per-model diagram override; null = generic per-category SVG. */
+  diagram_asset: string | null;
+  source_file: string;
+  source_checksum: string;
+}
+
+export interface CatalogPart {
+  id: number;
+  catalog_model_id: number;
+  name: string;
+  /** Official manufacturer part number; null when not verified yet. */
+  part_number: string | null;
+  /** Free-text grouping for the legend (e.g. "Blade grip"). */
+  category: string | null;
+  notes: string | null;
+  /** Hotspot position on the diagram, percentages 0-100; null = not placeable. */
+  diagram_x: number | null;
+  diagram_y: number | null;
+}
+
+/** A catalog part with the live owned quantity (null = no linked inventory). */
+export interface CatalogPartView extends CatalogPart {
+  owned_quantity: number | null;
+}
+
+export interface CatalogModelDetail {
+  model: CatalogModel;
+  diagram_asset: string | null;
+  /** User models currently linked to this catalog model. */
+  linked_models: Array<{ id: number; name: string }>;
+  parts: CatalogPartView[];
 }
 
 export interface Part {
@@ -52,11 +109,6 @@ export interface PartInput {
   vendor: string | null;
   /** Whether the "low" quantity badge may appear for this part. Defaults to true. */
   low_stock_enabled?: boolean;
-}
-
-export interface ModelDetail {
-  model: Model;
-  parts: Part[];
 }
 
 export interface PartDetail {
@@ -275,6 +327,48 @@ export const api = {
   },
   unlinkModel(partId: number, modelId: number): Promise<void> {
     return request(`/parts/${partId}/models/${modelId}`, { method: 'DELETE' });
+  },
+
+  // Reference catalog
+  listCatalogManufacturers(): Promise<CatalogManufacturer[]> {
+    return request('/catalog/manufacturers');
+  },
+  listCatalogModels(manufacturerId: number): Promise<CatalogModel[]> {
+    return request(`/catalog/manufacturers/${manufacturerId}/models`);
+  },
+  /**
+   * Catalog model detail with live owned quantities. Pass `modelId` to scope
+   * the quantities to that one user model; omit it to sum over all linked
+   * models.
+   */
+  getCatalogModel(id: number, modelId?: number): Promise<CatalogModelDetail> {
+    return request(
+      `/catalog/models/${id}${modelId !== undefined ? `?model_id=${modelId}` : ''}`,
+    );
+  },
+  linkCatalog(modelId: number, catalogModelId: number): Promise<Model> {
+    return request(`/models/${modelId}/link-catalog`, {
+      method: 'POST',
+      body: JSON.stringify({ catalog_model_id: catalogModelId }),
+    });
+  },
+  unlinkCatalog(modelId: number): Promise<void> {
+    return request(`/models/${modelId}/link-catalog`, { method: 'DELETE' });
+  },
+  /**
+   * One-click add of a catalog part to a model's inventory. Creates the part
+   * pre-filled from the catalog entry, or increments the existing tied part's
+   * quantity (delta semantics, clamped at 0). Returns the resulting part.
+   */
+  addToInventory(catalogPartId: number, modelId: number, quantity?: number): Promise<Part> {
+    return request(`/catalog/parts/${catalogPartId}/add-to-inventory`, {
+      method: 'POST',
+      body: JSON.stringify({ model_id: modelId, quantity }),
+    });
+  },
+  /** Explicit admin deletion of a catalog part (orphan cleanup). */
+  deleteCatalogPart(id: number): Promise<void> {
+    return request(`/catalog/parts/${id}`, { method: 'DELETE' });
   },
 
   // Settings

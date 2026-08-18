@@ -2,14 +2,21 @@
   import {
     api,
     errorMessage,
+    type CatalogManufacturer,
+    type CatalogModel,
+    type CatalogModelDetail,
+    type CatalogPartView,
     type ModelDetail as ModelDetailT,
     type Part,
+    type Settings,
     type UsageRecord,
   } from '../lib/api';
   import { formatDate } from '../lib/format';
   import CategoryBadge from '../components/CategoryBadge.svelte';
   import StatusBadge from '../components/StatusBadge.svelte';
   import QuantityStepper from '../components/QuantityStepper.svelte';
+  import DiagramViewer from '../components/DiagramViewer.svelte';
+  import CatalogPartsList from '../components/CatalogPartsList.svelte';
   import LogUsageForm from '../components/LogUsageForm.svelte';
   import UsageLog from '../components/UsageLog.svelte';
   import Flash from '../components/Flash.svelte';
@@ -27,13 +34,30 @@
   let linkSelection = $state<number | ''>('');
   let busy = $state(false);
 
+  // Reference catalog: the embedded summary (detail.model.catalog) tells us
+  // the model is linked; the full diagram + parts list is fetched from the
+  // catalog endpoint, scoped to this model's owned quantities.
+  let catalogDetail = $state<CatalogModelDetail | null>(null);
+  let catalogLoading = $state(false);
+  let catalogError = $state<string | null>(null);
+  let settings = $state<Settings | null>(null);
+  let catBusy = $state(false);
+  // "Link to catalog" picker (only used while not linked)
+  let catMfrs = $state<CatalogManufacturer[]>([]);
+  let catMfrSel = $state<number | ''>('');
+  let catModels = $state<CatalogModel[]>([]);
+  let catModelSel = $state<number | ''>('');
+
+  const catalogModelId = $derived(detail?.model.catalog_model_id ?? null);
+
   async function load() {
     error = null;
     try {
-      [detail, allParts, usage] = await Promise.all([
+      [detail, allParts, usage, settings] = await Promise.all([
         api.getModel(id),
         api.listParts({ sort: 'name_asc' }),
         api.listUsage({ model_id: id }),
+        api.getSettings(),
       ]);
     } catch (e) {
       error = errorMessage(e);
@@ -45,6 +69,9 @@
   $effect(() => {
     void id;
     void load();
+    if (catMfrs.length === 0) {
+      api.listCatalogManufacturers().then((m) => (catMfrs = m)).catch(() => {});
+    }
   });
 
   function flashOk(msg: string) {
@@ -100,6 +127,95 @@
       ]);
     } catch (e) {
       error = errorMessage(e);
+    }
+  }
+
+  async function loadCatalog() {
+    catalogError = null;
+    if (catalogModelId === null) {
+      catalogDetail = null;
+      return;
+    }
+    catalogLoading = true;
+    try {
+      // Scoped to this model: quantities reflect this model's inventory only.
+      catalogDetail = await api.getCatalogModel(catalogModelId, id);
+    } catch (e) {
+      catalogError = errorMessage(e);
+    } finally {
+      catalogLoading = false;
+    }
+  }
+
+  $effect(() => {
+    void catalogModelId;
+    if (detail) void loadCatalog();
+  });
+
+  async function onCatalogMfrChange() {
+    catModelSel = '';
+    catModels = [];
+    const cat = detail?.model.category;
+    if (catMfrSel === '' || !cat) return;
+    try {
+      // Only offer catalog models matching this model's category: the
+      // server would reject the link otherwise.
+      const all = await api.listCatalogModels(catMfrSel);
+      catModels = all.filter((m) => m.category === cat);
+    } catch (e) {
+      catalogError = errorMessage(e);
+    }
+  }
+
+  async function linkToCatalog() {
+    if (catModelSel === '') return;
+    catBusy = true;
+    try {
+      await api.linkCatalog(id, catModelSel);
+      catMfrSel = '';
+      catModelSel = '';
+      detail = await api.getModel(id);
+      await loadCatalog();
+      flashOk(`Linked to catalog model ${detail.catalog?.catalog_model_name ?? ''}.`);
+    } catch (e) {
+      catalogError = errorMessage(e);
+    } finally {
+      catBusy = false;
+    }
+  }
+
+  async function unlinkFromCatalog() {
+    if (catalogModelId === null) return;
+    catBusy = true;
+    try {
+      await api.unlinkCatalog(id);
+      detail = await api.getModel(id);
+      catalogDetail = null;
+      // Offer the picker again now that we're unlinked.
+      if (catMfrs.length === 0) catMfrs = await api.listCatalogManufacturers().catch(() => []);
+      flashOk('Catalog link removed.');
+    } catch (e) {
+      catalogError = errorMessage(e);
+    } finally {
+      catBusy = false;
+    }
+  }
+
+  async function addCatalogPart(part: CatalogPartView) {
+    catBusy = true;
+    try {
+      await api.addToInventory(part.id, id);
+      // Refresh both the catalog section and the linked-parts table (a new
+      // part row may have been created).
+      [detail, catalogDetail] = await Promise.all([
+        api.getModel(id),
+        api.getCatalogModel(catalogModelId as number, id),
+      ]);
+      flashOk(`${part.name} added to inventory.`);
+    } catch (e) {
+      catalogError = errorMessage(e);
+    } finally {
+      catBusy = false;
     }
   }
 
@@ -242,6 +358,91 @@
             {/each}
           </tbody>
         </table>
+      </div>
+    {/if}
+  </div>
+
+  <div class="card mt-6">
+    <div class="flex items-center justify-between border-b border-stone-200 dark:border-zinc-800 px-4 py-3">
+      <h2 class="text-sm font-semibold uppercase tracking-wide text-stone-600 dark:text-zinc-400">
+        Catalog
+      </h2>
+      {#if detail.catalog}
+        <button type="button" class="btn-ghost !py-1 text-xs" disabled={catBusy} onclick={unlinkFromCatalog}>
+          Unlink from catalog
+        </button>
+      {/if}
+    </div>
+    {#if catalogError}
+      <div class="p-4"><ErrorBanner message={catalogError} /></div>
+    {/if}
+
+    {#if detail.catalog}
+      {#if catalogDetail}
+        <div class="grid gap-4 p-4 lg:grid-cols-2">
+          <div>
+            <p class="mb-2 text-xs text-stone-500 dark:text-zinc-400">
+              Linked to <strong class="text-stone-700 dark:text-zinc-300">{catalogDetail.model.manufacturer} {catalogDetail.model.name}</strong>
+              — pins are colored by this model's owned quantities.
+            </p>
+            <DiagramViewer
+              asset={catalogDetail.diagram_asset ?? catalogDetail.model.diagram_asset}
+              category={catalogDetail.model.category}
+              parts={catalogDetail.parts}
+              lowStockEnabled={settings?.low_stock_enabled ?? true}
+              lowStockThreshold={settings?.low_stock_threshold ?? 2}
+              onAdd={addCatalogPart}
+            />
+          </div>
+          <CatalogPartsList
+            parts={catalogDetail.parts}
+            lowStockEnabled={settings?.low_stock_enabled ?? true}
+            lowStockThreshold={settings?.low_stock_threshold ?? 2}
+            onAdd={addCatalogPart}
+            busy={catBusy}
+            addLabel="Add"
+          />
+        </div>
+      {:else if catalogLoading}
+        <div class="flex items-center justify-center gap-2 py-10 text-sm text-stone-500 dark:text-zinc-400">
+          <Spinner /> Loading catalog…
+        </div>
+      {/if}
+    {:else}
+      <div class="p-4">
+        <p class="mb-3 text-sm text-stone-600 dark:text-zinc-400">
+          Link this model to a reference catalog model to see its official parts diagram and
+          one-click add parts to your inventory.
+        </p>
+        {#if catMfrs.length === 0}
+          <div class="flex items-center gap-2 text-sm text-stone-500 dark:text-zinc-400">
+            <Spinner /> Loading catalog manufacturers…
+          </div>
+        {:else}
+          <div class="flex flex-wrap items-end gap-3">
+            <label class="flex flex-col gap-1">
+              <span class="label !mb-0">Manufacturer</span>
+              <select class="input max-w-52" bind:value={catMfrSel} oninput={onCatalogMfrChange} disabled={catBusy}>
+                <option value="" disabled>Choose…</option>
+                {#each catMfrs as m (m.id)}
+                  <option value={m.id}>{m.name} ({m.model_count})</option>
+                {/each}
+              </select>
+            </label>
+            <label class="flex flex-col gap-1">
+              <span class="label !mb-0">Model ({detail.model.category})</span>
+              <select class="input max-w-52" bind:value={catModelSel} disabled={catBusy || catModels.length === 0}>
+                <option value="" disabled>{catMfrSel === '' ? 'Pick a manufacturer first' : 'No matching catalog models'}</option>
+                {#each catModels as m (m.id)}
+                  <option value={m.id}>{m.name}</option>
+                {/each}
+              </select>
+            </label>
+            <button type="button" class="btn-primary" disabled={catBusy || catModelSel === ''} onclick={linkToCatalog}>
+              Link
+            </button>
+          </div>
+        {/if}
       </div>
     {/if}
   </div>

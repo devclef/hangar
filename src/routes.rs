@@ -14,8 +14,9 @@ use tower_http::trace::TraceLayer;
 use crate::error::DomainError;
 use crate::service::ServiceApi;
 use crate::types::{
-    Model, ModelDetail, ModelInput, ModelListFilter, ModelListRow, Part, PartBulkEdit, PartDetail,
-    PartInput, PartListFilter, PartListRow, Settings, UsageFilter, UsageInput, UsageRecord,
+    CatalogManufacturer, CatalogModel, CatalogModelDetail, Model, ModelDetail, ModelInput,
+    ModelListFilter, ModelListRow, Part, PartBulkEdit, PartDetail, PartInput, PartListFilter,
+    PartListRow, Settings, UsageFilter, UsageInput, UsageRecord,
 };
 
 #[derive(Clone)]
@@ -51,6 +52,21 @@ pub fn router(state: AppState) -> Router {
         .route("/usage", get(list_usage))
         .route("/parts/{id}/usage", post(log_part_usage))
         .route("/models/{id}/usage", post(log_model_usage))
+        .route(
+            "/models/{id}/link-catalog",
+            post(link_catalog).delete(unlink_catalog),
+        )
+        .route("/catalog/manufacturers", get(list_catalog_manufacturers))
+        .route(
+            "/catalog/manufacturers/{id}/models",
+            get(list_catalog_models),
+        )
+        .route("/catalog/models/{id}", get(get_catalog_model))
+        .route("/catalog/parts/{id}", delete(delete_catalog_part))
+        .route(
+            "/catalog/parts/{id}/add-to-inventory",
+            post(add_to_inventory),
+        )
         .route("/settings", get(get_settings).put(update_settings));
 
     Router::new()
@@ -110,6 +126,29 @@ pub struct ReplacePartsBody {
 #[derive(Deserialize)]
 pub struct AdjustQuantityBody {
     pub delta: i64,
+}
+
+#[derive(Deserialize)]
+pub struct LinkCatalogBody {
+    pub catalog_model_id: i64,
+}
+
+/// Body for `POST /api/catalog/parts/:id/add-to-inventory`. `quantity` is
+/// the delta applied to an existing tied part (or the starting count of a
+/// new one); omitted means +1.
+#[derive(Deserialize)]
+pub struct AddToInventoryBody {
+    pub model_id: i64,
+    #[serde(default)]
+    pub quantity: Option<i64>,
+}
+
+/// `GET /api/catalog/models/:id` filters. `model_id` restricts owned
+/// quantities to one specific user model (omitted: all linked models).
+#[derive(Deserialize)]
+pub struct CatalogModelFilter {
+    #[serde(default)]
+    pub model_id: Option<i64>,
 }
 
 #[derive(Deserialize)]
@@ -366,6 +405,102 @@ async fn log_model_usage(
     };
     let record = st.service.record_usage(body.part_id, id, input).await?;
     Ok((StatusCode::CREATED, Json(record)))
+}
+
+// ---------------------------------------------------------------------------
+// Model <-> catalog link
+// ---------------------------------------------------------------------------
+
+/// Links (or re-points) a model to a catalog model. POST with replace
+/// semantics rather than PUT: there is no body-shaped resource to replace —
+/// the link is single-valued, so "replace" is simply "set to this value" —
+/// which keeps the endpoint action-shaped like the part link endpoints
+/// while staying idempotent when the same catalog model is re-linked.
+async fn link_catalog(
+    State(st): State<AppState>,
+    Path(id): Path<i64>,
+    body: Result<Json<LinkCatalogBody>, JsonRejection>,
+) -> Result<Json<Model>, DomainError> {
+    let body = parse_body(body)?;
+    Ok(Json(
+        st.service
+            .link_model_catalog(id, body.catalog_model_id)
+            .await?,
+    ))
+}
+
+async fn unlink_catalog(
+    State(st): State<AppState>,
+    Path(id): Path<i64>,
+) -> Result<StatusCode, DomainError> {
+    st.service.unlink_model_catalog(id).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+// ---------------------------------------------------------------------------
+// Reference catalog
+// ---------------------------------------------------------------------------
+
+async fn list_catalog_manufacturers(
+    State(st): State<AppState>,
+) -> Result<Json<Vec<CatalogManufacturer>>, DomainError> {
+    Ok(Json(st.service.list_catalog_manufacturers().await?))
+}
+
+async fn list_catalog_models(
+    State(st): State<AppState>,
+    Path(id): Path<i64>,
+) -> Result<Json<Vec<CatalogModel>>, DomainError> {
+    Ok(Json(st.service.list_catalog_models(id).await?))
+}
+
+async fn get_catalog_model(
+    State(st): State<AppState>,
+    Path(id): Path<i64>,
+    filter: Result<Query<CatalogModelFilter>, QueryRejection>,
+) -> Result<Json<CatalogModelDetail>, DomainError> {
+    let filter = parse_query(filter)?;
+    Ok(Json(
+        st.service
+            .get_catalog_model_detail(id, filter.model_id)
+            .await?,
+    ))
+}
+
+/// Explicit admin deletion of a catalog part (typically an orphan left
+/// behind by a re-import). Inventory parts keep existing; their
+/// `catalog_part_id` trace link becomes NULL.
+async fn delete_catalog_part(
+    State(st): State<AppState>,
+    Path(id): Path<i64>,
+) -> Result<StatusCode, DomainError> {
+    st.service.delete_catalog_part(id).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// One-click "add this catalog part to my inventory". Creates the part
+/// pre-filled from the catalog entry (name, part_number -> `link`,
+/// catalog trace link) and links it to the model; if that catalog part is
+/// already tied to an inventory part on the model, the existing part's
+/// quantity is adjusted instead (clamped at 0).
+async fn add_to_inventory(
+    State(st): State<AppState>,
+    Path(id): Path<i64>,
+    body: Result<Json<AddToInventoryBody>, JsonRejection>,
+) -> Result<(StatusCode, Json<Part>), DomainError> {
+    let body = parse_body(body)?;
+    let (created, part) = st
+        .service
+        .add_catalog_part_to_inventory(id, body.model_id, body.quantity)
+        .await?;
+    Ok((
+        if created {
+            StatusCode::CREATED
+        } else {
+            StatusCode::OK
+        },
+        Json(part),
+    ))
 }
 
 // ---------------------------------------------------------------------------

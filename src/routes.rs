@@ -14,9 +14,9 @@ use tower_http::trace::TraceLayer;
 use crate::error::DomainError;
 use crate::service::ServiceApi;
 use crate::types::{
-    CatalogManufacturer, CatalogModel, CatalogModelDetail, Model, ModelDetail, ModelInput,
-    ModelListFilter, ModelListRow, Part, PartBulkEdit, PartDetail, PartInput, PartListFilter,
-    PartListRow, Settings, UsageFilter, UsageInput, UsageRecord,
+    CatalogManufacturer, CatalogModel, CatalogModelDetail, CatalogPartSearchHit, Model,
+    ModelDetail, ModelInput, ModelListFilter, ModelListRow, Part, PartBulkEdit, PartDetail,
+    PartInput, PartListFilter, PartListRow, Settings, UsageFilter, UsageInput, UsageRecord,
 };
 
 #[derive(Clone)]
@@ -47,6 +47,10 @@ pub fn router(state: AppState) -> Router {
             get(get_part).put(update_part).delete(delete_part),
         )
         .route("/parts/{id}/quantity", post(adjust_quantity))
+        .route(
+            "/parts/{id}/link-catalog",
+            post(link_part_catalog).delete(unlink_part_catalog),
+        )
         .route("/parts/{id}/models", get(list_part_models).post(link_model))
         .route("/parts/{id}/models/{model_id}", delete(unlink_model))
         .route("/usage", get(list_usage))
@@ -62,6 +66,7 @@ pub fn router(state: AppState) -> Router {
             get(list_catalog_models),
         )
         .route("/catalog/models/{id}", get(get_catalog_model))
+        .route("/catalog/parts", get(search_catalog_parts))
         .route("/catalog/parts/{id}", delete(delete_catalog_part))
         .route(
             "/catalog/parts/{id}/add-to-inventory",
@@ -131,6 +136,21 @@ pub struct AdjustQuantityBody {
 #[derive(Deserialize)]
 pub struct LinkCatalogBody {
     pub catalog_model_id: i64,
+}
+
+/// Body for `POST /api/parts/:id/link-catalog`: the reference catalog part
+/// the inventory part traces back to.
+#[derive(Deserialize)]
+pub struct LinkPartCatalogBody {
+    pub catalog_part_id: i64,
+}
+
+/// `GET /api/catalog/parts` filters: case-insensitive substring match on
+/// part name, part number, or notes; omitted lists the first 100 parts.
+#[derive(Deserialize)]
+pub struct CatalogPartSearchFilter {
+    #[serde(default)]
+    pub q: Option<String>,
 }
 
 /// Body for `POST /api/catalog/parts/:id/add-to-inventory`. `quantity` is
@@ -336,6 +356,30 @@ async fn adjust_quantity(
     Ok(Json(st.service.adjust_quantity(id, body.delta).await?))
 }
 
+/// Links (or re-points) an inventory part to a reference catalog part.
+/// The trace link powers the catalog view's owned quantities; it is never
+/// set by `PUT /api/parts/:id`, so full-replace edits can't wipe it.
+/// Returns the refreshed part detail (with the catalog summary embedded).
+async fn link_part_catalog(
+    State(st): State<AppState>,
+    Path(id): Path<i64>,
+    body: Result<Json<LinkPartCatalogBody>, JsonRejection>,
+) -> Result<Json<PartDetail>, DomainError> {
+    let body = parse_body(body)?;
+    st.service
+        .link_part_catalog(id, body.catalog_part_id)
+        .await?;
+    Ok(Json(st.service.get_part_detail(id).await?))
+}
+
+async fn unlink_part_catalog(
+    State(st): State<AppState>,
+    Path(id): Path<i64>,
+) -> Result<StatusCode, DomainError> {
+    st.service.unlink_part_catalog(id).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
 async fn list_part_models(
     State(st): State<AppState>,
     Path(id): Path<i64>,
@@ -464,6 +508,19 @@ async fn get_catalog_model(
         st.service
             .get_catalog_model_detail(id, filter.model_id)
             .await?,
+    ))
+}
+
+/// Catalog part search across all models (name / part number / notes),
+/// joined with the model and manufacturer so the part-detail link picker
+/// can render each hit without extra round trips.
+async fn search_catalog_parts(
+    State(st): State<AppState>,
+    filter: Result<Query<CatalogPartSearchFilter>, QueryRejection>,
+) -> Result<Json<Vec<CatalogPartSearchHit>>, DomainError> {
+    let filter = parse_query(filter)?;
+    Ok(Json(
+        st.service.search_catalog_parts(filter.q.as_deref()).await?,
     ))
 }
 

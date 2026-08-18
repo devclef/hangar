@@ -15,8 +15,8 @@ use crate::repo::sqlite::SqliteRepo;
 use crate::repo::HangarRepo;
 use crate::types::{
     CatalogLinkedModel, CatalogManufacturer, CatalogModel, CatalogModelDetail, CatalogModelSummary,
-    CatalogPartView, Model, ModelDetail, ModelInput, Part, PartBulkEdit, PartDetail, PartInput,
-    PartListRow, PartSort, Settings, UsageInput, UsageRecord,
+    CatalogPartSearchHit, CatalogPartView, Model, ModelDetail, ModelInput, Part, PartBulkEdit,
+    PartDetail, PartInput, PartListRow, PartSort, Settings, UsageInput, UsageRecord,
 };
 
 #[async_trait]
@@ -39,6 +39,16 @@ pub trait ServiceApi: Send + Sync {
         sort: PartSort,
     ) -> Result<Vec<PartListRow>, DomainError>;
     async fn get_part_detail(&self, id: i64) -> Result<PartDetail, DomainError>;
+    /// Links an existing inventory part to a reference catalog part (the
+    /// `parts.catalog_part_id` trace link). Re-linking replaces the target.
+    /// Both the part and the catalog part must exist (404 otherwise).
+    async fn link_part_catalog(
+        &self,
+        part_id: i64,
+        catalog_part_id: i64,
+    ) -> Result<Part, DomainError>;
+    /// Removes the part's catalog trace link. 404 when the part has none.
+    async fn unlink_part_catalog(&self, part_id: i64) -> Result<(), DomainError>;
     async fn create_part(&self, input: PartInput) -> Result<Part, DomainError>;
     async fn update_part(&self, id: i64, input: PartInput) -> Result<Part, DomainError>;
     async fn delete_part(&self, id: i64) -> Result<(), DomainError>;
@@ -112,6 +122,13 @@ pub trait ServiceApi: Send + Sync {
     /// Explicit admin deletion of a catalog part (orphan cleanup). Inventory
     /// parts keep existing; their trace link is set to NULL.
     async fn delete_catalog_part(&self, id: i64) -> Result<(), DomainError>;
+    /// Searches catalog parts across all models by name, part number, or
+    /// notes (case-insensitive substring); empty/blank query lists the
+    /// first 100 parts in name order.
+    async fn search_catalog_parts(
+        &self,
+        q: Option<&str>,
+    ) -> Result<Vec<CatalogPartSearchHit>, DomainError>;
     /// Adds a catalog part to a user model's inventory: creates the part
     /// pre-filled from the catalog entry, or — when the same catalog part is
     /// already tied to an inventory part on that model — adjusts that part's
@@ -236,7 +253,45 @@ impl ServiceApi for Service {
     async fn get_part_detail(&self, id: i64) -> Result<PartDetail, DomainError> {
         let part = self.require_part(self.repo.get_part(id).await?, id)?;
         let models = self.repo.list_part_models(id).await?;
-        Ok(PartDetail { part, models })
+        // Embedded catalog summary (no full model payload): the detail page
+        // shows the "catalog" section and offers unlink without a second
+        // round trip. Can't dangle — deleting a catalog part SETs the
+        // part's link to NULL at the schema level.
+        let catalog = match part.catalog_part_id {
+            Some(cp_id) => self.repo.get_catalog_part_link(cp_id).await?,
+            None => None,
+        };
+        Ok(PartDetail {
+            part,
+            models,
+            catalog,
+        })
+    }
+
+    async fn link_part_catalog(
+        &self,
+        part_id: i64,
+        catalog_part_id: i64,
+    ) -> Result<Part, DomainError> {
+        self.require_part(self.repo.get_part(part_id).await?, part_id)?;
+        self.repo
+            .get_catalog_part(catalog_part_id)
+            .await?
+            .ok_or_else(|| DomainError::NotFound(NotFound::CatalogPart(catalog_part_id)))?;
+        let part = self
+            .repo
+            .set_part_catalog_link(part_id, Some(catalog_part_id))
+            .await?;
+        self.require_part(part, part_id)
+    }
+
+    async fn unlink_part_catalog(&self, part_id: i64) -> Result<(), DomainError> {
+        let part = self.require_part(self.repo.get_part(part_id).await?, part_id)?;
+        if part.catalog_part_id.is_none() {
+            return Err(DomainError::NotFound(NotFound::PartCatalogLink { part_id }));
+        }
+        self.repo.set_part_catalog_link(part_id, None).await?;
+        Ok(())
     }
 
     async fn create_part(&self, input: PartInput) -> Result<Part, DomainError> {
@@ -493,6 +548,14 @@ impl ServiceApi for Service {
             return Err(DomainError::NotFound(NotFound::CatalogPart(id)));
         }
         Ok(())
+    }
+
+    async fn search_catalog_parts(
+        &self,
+        q: Option<&str>,
+    ) -> Result<Vec<CatalogPartSearchHit>, DomainError> {
+        let q = q.map(str::trim).filter(|t| !t.is_empty());
+        self.repo.search_catalog_parts(q, 100).await
     }
 
     async fn add_catalog_part_to_inventory(

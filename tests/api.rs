@@ -2610,3 +2610,277 @@ async fn catalog_part_delete_keeps_inventory() {
         .iter()
         .any(|p| p["name"] == "Main blade grip set"));
 }
+
+#[tokio::test]
+async fn catalog_part_search_link_and_owned_quantities() {
+    let (app, service) = app_with_service().await;
+
+    // Import the catalog file and resolve ids.
+    let path = write_catalog_file(M1_JSON);
+    service.import_catalog_file(&path).await.unwrap();
+    let res = call(app.clone(), Method::GET, "/api/catalog/manufacturers", None).await;
+    let mfr_id = res.body.as_array().unwrap()[0]["id"].as_i64().unwrap();
+    let res = call(
+        app.clone(),
+        Method::GET,
+        &format!("/api/catalog/manufacturers/{mfr_id}/models"),
+        None,
+    )
+    .await;
+    let cm_id = res.body.as_array().unwrap()[0]["id"].as_i64().unwrap();
+
+    // Search: name substring
+    let res = call(
+        app.clone(),
+        Method::GET,
+        "/api/catalog/parts?q=blade%20grip",
+        None,
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::OK);
+    let hits = res.body.as_array().unwrap();
+    assert_eq!(hits.len(), 2);
+    assert_eq!(hits[0]["name"], "Main blade grip set");
+    assert_eq!(hits[0]["part_number"], "OSHM1013");
+    assert_eq!(hits[0]["catalog_model_id"], cm_id);
+    assert_eq!(hits[0]["catalog_model_name"], "M1");
+    assert_eq!(hits[0]["manufacturer"], "OMP Hobby");
+    assert_eq!(hits[0]["model_category"], "heli");
+    let grip_cp_id = hits[0]["id"].as_i64().unwrap();
+    assert_eq!(hits[1]["name"], "Tail blade grip set");
+    assert!(hits[1]["part_number"].is_null());
+    let tail_cp_id = hits[1]["id"].as_i64().unwrap();
+
+    // Search: part number
+    let res = call(
+        app.clone(),
+        Method::GET,
+        "/api/catalog/parts?q=OSHM1013",
+        None,
+    )
+    .await;
+    let hits = res.body.as_array().unwrap();
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0]["id"], grip_cp_id);
+
+    // Search: notes
+    let res = call(
+        app.clone(),
+        Method::GET,
+        "/api/catalog/parts?q=bearings",
+        None,
+    )
+    .await;
+    assert_eq!(res.body.as_array().unwrap().len(), 1);
+
+    // Browse mode (no q) lists every part; no match yields an empty list.
+    let res = call(app.clone(), Method::GET, "/api/catalog/parts", None).await;
+    assert_eq!(res.body.as_array().unwrap().len(), 3);
+    let res = call(app.clone(), Method::GET, "/api/catalog/parts?q=zzz", None).await;
+    assert!(res.body.as_array().unwrap().is_empty());
+
+    // A hand-created part has no catalog link, yet exists fine.
+    let model_id = id(&call(
+        app.clone(),
+        Method::POST,
+        "/api/models",
+        Some(model_json("My M1", "heli")),
+    )
+    .await
+    .body);
+    let part_id = id(&call(
+        app.clone(),
+        Method::POST,
+        "/api/parts",
+        Some(part_json("Main blade grip set", 2)),
+    )
+    .await
+    .body);
+    let res = call(
+        app.clone(),
+        Method::GET,
+        &format!("/api/parts/{part_id}"),
+        None,
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::OK);
+    assert!(res.body["catalog"].is_null());
+    assert!(res.body["part"]["catalog_part_id"].is_null());
+
+    // Error paths: unlinking a part with no link; linking an unknown
+    // catalog part; linking an unknown part.
+    let res = call(
+        app.clone(),
+        Method::DELETE,
+        &format!("/api/parts/{part_id}/link-catalog"),
+        None,
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::NOT_FOUND);
+    let res = call(
+        app.clone(),
+        Method::POST,
+        &format!("/api/parts/{part_id}/link-catalog"),
+        Some(serde_json::json!({ "catalog_part_id": 999 })),
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::NOT_FOUND);
+    let res = call(
+        app.clone(),
+        Method::POST,
+        "/api/parts/999/link-catalog",
+        Some(serde_json::json!({ "catalog_part_id": grip_cp_id })),
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::NOT_FOUND);
+
+    // Link the part: returns the refreshed detail with the embed.
+    let res = call(
+        app.clone(),
+        Method::POST,
+        &format!("/api/parts/{part_id}/link-catalog"),
+        Some(serde_json::json!({ "catalog_part_id": grip_cp_id })),
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::OK);
+    let detail = &res.body;
+    assert_eq!(detail["part"]["id"], part_id);
+    assert_eq!(detail["part"]["catalog_part_id"], grip_cp_id);
+    assert_eq!(detail["catalog"]["catalog_part_id"], grip_cp_id);
+    assert_eq!(
+        detail["catalog"]["catalog_part_name"],
+        "Main blade grip set"
+    );
+    assert_eq!(detail["catalog"]["part_number"], "OSHM1013");
+    assert_eq!(detail["catalog"]["catalog_model_id"], cm_id);
+    assert_eq!(detail["catalog"]["catalog_model_name"], "M1");
+    assert_eq!(detail["catalog"]["manufacturer"], "OMP Hobby");
+    assert_eq!(detail["catalog"]["model_category"], "heli");
+
+    // List rows expose the link too.
+    let res = call(app.clone(), Method::GET, "/api/parts", None).await;
+    let row = res
+        .body
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|p| p["id"] == part_id)
+        .unwrap();
+    assert_eq!(row["catalog_part_id"], grip_cp_id);
+
+    // A linked part does NOT count yet: the part must also be linked to a
+    // user model that is linked to the catalog model.
+    let res = call(
+        app.clone(),
+        Method::GET,
+        &format!("/api/catalog/models/{cm_id}"),
+        None,
+    )
+    .await;
+    let view = res.body["parts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|p| p["id"] == grip_cp_id)
+        .unwrap();
+    assert!(view["owned_quantity"].is_null());
+
+    // Link model -> catalog and part -> model: the quantity now counts.
+    let res = call(
+        app.clone(),
+        Method::POST,
+        &format!("/api/models/{model_id}/link-catalog"),
+        Some(serde_json::json!({ "catalog_model_id": cm_id })),
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::OK);
+    let res = call(
+        app.clone(),
+        Method::POST,
+        &format!("/api/parts/{part_id}/models"),
+        Some(serde_json::json!({ "model_id": model_id })),
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::NO_CONTENT);
+    let res = call(
+        app.clone(),
+        Method::GET,
+        &format!("/api/catalog/models/{cm_id}"),
+        None,
+    )
+    .await;
+    let parts = res.body["parts"].as_array().unwrap();
+    let view = parts.iter().find(|p| p["id"] == grip_cp_id).unwrap();
+    assert_eq!(view["owned_quantity"], 2);
+
+    // Re-linking replaces the target: owned quantity moves to the new part.
+    let res = call(
+        app.clone(),
+        Method::POST,
+        &format!("/api/parts/{part_id}/link-catalog"),
+        Some(serde_json::json!({ "catalog_part_id": tail_cp_id })),
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::OK);
+    assert_eq!(res.body["part"]["catalog_part_id"], tail_cp_id);
+    assert_eq!(
+        res.body["catalog"]["catalog_part_name"],
+        "Tail blade grip set"
+    );
+    let res = call(
+        app.clone(),
+        Method::GET,
+        &format!("/api/catalog/models/{cm_id}"),
+        None,
+    )
+    .await;
+    let parts = res.body["parts"].as_array().unwrap();
+    // Model is linked, so quantities are integers: the grip drops to 0.
+    assert_eq!(
+        parts.iter().find(|p| p["id"] == grip_cp_id).unwrap()["owned_quantity"],
+        0
+    );
+    assert_eq!(
+        parts.iter().find(|p| p["id"] == tail_cp_id).unwrap()["owned_quantity"],
+        2
+    );
+
+    // Unlink: quantity drops back out; a second unlink is a 404.
+    let res = call(
+        app.clone(),
+        Method::DELETE,
+        &format!("/api/parts/{part_id}/link-catalog"),
+        None,
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::NO_CONTENT);
+    let res = call(
+        app.clone(),
+        Method::GET,
+        &format!("/api/parts/{part_id}"),
+        None,
+    )
+    .await;
+    assert!(res.body["catalog"].is_null());
+    assert!(res.body["part"]["catalog_part_id"].is_null());
+    let res = call(
+        app.clone(),
+        Method::GET,
+        &format!("/api/catalog/models/{cm_id}"),
+        None,
+    )
+    .await;
+    let parts = res.body["parts"].as_array().unwrap();
+    assert_eq!(
+        parts.iter().find(|p| p["id"] == tail_cp_id).unwrap()["owned_quantity"],
+        0
+    );
+    let res = call(
+        app.clone(),
+        Method::DELETE,
+        &format!("/api/parts/{part_id}/link-catalog"),
+        None,
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::NOT_FOUND);
+}

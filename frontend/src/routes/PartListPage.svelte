@@ -474,7 +474,15 @@
                 />
               </td>
               <td class="td">
-                <a class="font-medium text-zinc-900 dark:text-zinc-100 hover:underline" href="#/parts/{p.id}">{p.name}</a>
+                <span class="flex items-center gap-2">
+                  <a class="font-medium text-zinc-900 dark:text-zinc-100 hover:underline" href="#/parts/{p.id}">{p.name}</a>
+                  {#if p.catalog_part_id}
+                    <span
+                      class="rounded bg-indigo-100 dark:bg-indigo-500/15 px-1.5 py-0.5 text-xs font-semibold text-indigo-700 dark:text-indigo-400"
+                      title="Linked to a reference catalog part"
+                    >catalog</span>
+                  {/if}
+                </span>
                 {#if p.notes}
                   <div class="max-w-56 truncate text-xs text-stone-400 dark:text-zinc-500" title={p.notes}>{p.notes}</div>
                 {/if}

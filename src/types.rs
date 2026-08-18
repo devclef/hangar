@@ -213,6 +213,10 @@ pub struct Part {
     /// Whether the "low quantity" badge may appear for this part. Users
     /// commonly keep a single spare and opt such parts out.
     pub low_stock_enabled: bool,
+    /// Optional trace link to a reference catalog part; NULL for hand-created
+    /// parts. Managed via `POST/DELETE /api/parts/:id/link-catalog` and by
+    /// the catalog "add to inventory" action — never by `PUT /api/parts/:id`.
+    pub catalog_part_id: Option<i64>,
 }
 
 /// A model as returned by list endpoints (includes how many parts are linked).
@@ -262,6 +266,8 @@ pub struct PartListRow {
     pub vendor: Option<String>,
     pub model_count: i64,
     pub model_names: Option<String>,
+    /// Set when the part is trace-linked to a reference catalog part.
+    pub catalog_part_id: Option<i64>,
 }
 
 impl PartListRow {
@@ -276,6 +282,7 @@ impl PartListRow {
             cost: self.cost,
             vendor: self.vendor,
             low_stock_enabled: self.low_stock_enabled,
+            catalog_part_id: self.catalog_part_id,
         }
     }
 }
@@ -349,6 +356,26 @@ pub struct CatalogPart {
     pub diagram_y: Option<f64>,
 }
 
+/// A catalog part hit from `GET /api/catalog/parts?q=…`, joined with its
+/// model and manufacturer so the part-detail link picker can render each
+/// hit as "model / part (manufacturer)" without extra round trips.
+#[derive(Debug, Clone, PartialEq, Serialize, sqlx::FromRow)]
+pub struct CatalogPartSearchHit {
+    pub id: i64,
+    pub catalog_model_id: i64,
+    pub name: String,
+    pub part_number: Option<String>,
+    pub category: Option<String>,
+    pub notes: Option<String>,
+    pub diagram_x: Option<f64>,
+    pub diagram_y: Option<f64>,
+    pub catalog_model_name: String,
+    pub manufacturer: String,
+    /// The catalog *model's* category (the part's own `category` is a
+    /// free-text grouping, so the model's is named distinctly).
+    pub model_category: Category,
+}
+
 /// A catalog part as returned by `GET /api/catalog/models/:id`, with the
 /// live owned quantity (sum over the inventory parts tied to this catalog
 /// part and linked to the linked user models) or `None` when no user model
@@ -384,6 +411,28 @@ pub struct CatalogModelDetail {
 pub struct PartDetail {
     pub part: Part,
     pub models: Vec<Model>,
+    /// Set when the part is trace-linked to a reference catalog part: a
+    /// small summary (no full catalog model payload) so the detail page can
+    /// show the "catalog" section and offer unlink without a second request.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub catalog: Option<PartCatalogLink>,
+}
+
+/// The embedded catalog summary on `GET /api/parts/:id` (see `PartDetail`).
+/// `id`/`name` come from the shared `catalog_parts` join projection
+/// (see `SqliteRepo::CATALOG_PART_JOIN`); the renames keep the wire/field
+/// names explicit in this context.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, sqlx::FromRow)]
+pub struct PartCatalogLink {
+    #[sqlx(rename = "id")]
+    pub catalog_part_id: i64,
+    #[sqlx(rename = "name")]
+    pub catalog_part_name: String,
+    pub part_number: Option<String>,
+    pub catalog_model_id: i64,
+    pub catalog_model_name: String,
+    pub manufacturer: String,
+    pub model_category: Category,
 }
 
 /// One entry in the part-usage log: `quantity` units of a part were consumed

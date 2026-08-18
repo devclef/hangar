@@ -2,6 +2,7 @@
   import {
     api,
     errorMessage,
+    type CatalogPartSearchHit,
     type Model,
     type PartDetail as PartDetailT,
     type UsageRecord,
@@ -25,6 +26,10 @@
   let flash = $state<string | null>(null);
   let linkSelection = $state<number | ''>('');
   let busy = $state(false);
+  let catalogQuery = $state('');
+  let catalogHits = $state<CatalogPartSearchHit[]>([]);
+  let catalogSearched = $state(false);
+  let catalogLinking = $state<number | null>(null);
   let currency = $state('USD');
 
   async function load() {
@@ -122,6 +127,54 @@
     }
   }
 
+  // Catalog part search: debounced while the user types; only runs while
+  // the part is unlinked and the query is non-empty (empty = browse mode
+  // is not auto-loaded on the detail page).
+  $effect(() => {
+    const q = catalogQuery.trim();
+    if (q === '' || detail?.catalog) return;
+    const t = setTimeout(async () => {
+      try {
+        catalogHits = await api.searchCatalogParts(q);
+        catalogSearched = true;
+      } catch (e) {
+        error = errorMessage(e);
+      }
+    }, 200);
+    return () => clearTimeout(t);
+  });
+
+  async function linkCatalogPart(hit: CatalogPartSearchHit) {
+    if (!detail) return;
+    catalogLinking = hit.id;
+    try {
+      detail = await api.linkPartCatalog(id, hit.id);
+      catalogQuery = '';
+      catalogHits = [];
+      catalogSearched = false;
+      flashOk('Linked to catalog part.');
+    } catch (e) {
+      error = errorMessage(e);
+    } finally {
+      catalogLinking = null;
+    }
+  }
+
+  async function unlinkCatalogPart() {
+    if (!detail) return;
+    busy = true;
+    try {
+      await api.unlinkPartCatalog(id);
+      detail.catalog = null;
+      detail.part.catalog_part_id = null;
+      flashOk('Unlinked from catalog part.');
+    } catch (e) {
+      error = errorMessage(e);
+    } finally {
+      busy = false;
+    }
+  }
+
   const unlinkedModels = $derived.by(() => {
     const d = detail;
     if (!d) return [];
@@ -152,6 +205,12 @@
   <div class="card p-5">
     <div class="flex flex-wrap items-center gap-3">
       <h1 class="text-2xl font-bold text-zinc-900 dark:text-zinc-100">{detail.part.name}</h1>
+      {#if detail.part.catalog_part_id}
+        <span
+          class="rounded bg-indigo-100 dark:bg-indigo-500/15 px-1.5 py-0.5 text-xs font-semibold text-indigo-700 dark:text-indigo-400"
+          title="Linked to a reference catalog part"
+        >catalog</span>
+      {/if}
     </div>
     <div class="mt-4 flex flex-wrap items-center gap-x-8 gap-y-3 text-sm">
       <div>
@@ -266,6 +325,92 @@
           </tbody>
         </table>
       </div>
+    {/if}
+  </div>
+
+  <div class="card mt-6">
+    <div class="border-b border-stone-200 dark:border-zinc-800 px-4 py-3">
+      <h2 class="text-sm font-semibold uppercase tracking-wide text-stone-600 dark:text-zinc-400">
+        Catalog
+      </h2>
+    </div>
+    {#if detail.catalog}
+      <div class="flex flex-wrap items-center justify-between gap-3 px-4 py-4">
+        <div>
+          <div class="flex flex-wrap items-center gap-2 text-sm font-medium text-zinc-900 dark:text-zinc-100">
+            {detail.catalog.catalog_part_name}
+            {#if detail.catalog.part_number}
+              <span class="font-mono text-xs text-stone-500 dark:text-zinc-400">{detail.catalog.part_number}</span>
+            {/if}
+          </div>
+          <div class="mt-1 flex flex-wrap items-center gap-2 text-sm text-stone-500 dark:text-zinc-400">
+            <span>{detail.catalog.catalog_model_name} — {detail.catalog.manufacturer}</span>
+            <CategoryBadge category={detail.catalog.model_category} />
+          </div>
+          <p class="mt-2 text-xs text-stone-400 dark:text-zinc-500">
+            This part counts toward the owned quantities on the catalog page.
+          </p>
+        </div>
+        <button type="button" class="btn-ghost" disabled={busy} onclick={unlinkCatalogPart}>
+          Unlink
+        </button>
+      </div>
+    {:else}
+      <div class="border-b border-stone-100 dark:border-zinc-800 px-4 py-3">
+        <p class="text-sm text-stone-500 dark:text-zinc-400">
+          Link this part to a reference catalog part so it counts toward the catalog's
+          owned quantities.
+        </p>
+        <div class="mt-2 flex max-w-md gap-2">
+          <input
+            class="input"
+            type="search"
+            placeholder="Search by part name or part number…"
+            bind:value={catalogQuery}
+          />
+        </div>
+      </div>
+      {#if catalogSearched}
+        {#if catalogHits.length === 0}
+          <div class="px-4 py-8 text-center text-sm text-stone-500 dark:text-zinc-400">
+            No catalog parts match "{catalogQuery.trim()}".
+          </div>
+        {:else}
+          <div class="overflow-x-auto">
+            <table class="w-full min-w-[36rem]">
+              <thead class="border-b border-stone-100 dark:border-zinc-800 bg-stone-50 dark:bg-zinc-900/70">
+                <tr>
+                  <th class="th">Part</th>
+                  <th class="th">Part number</th>
+                  <th class="th">Model</th>
+                  <th class="th">Manufacturer</th>
+                  <th class="th w-16"></th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-stone-100 dark:divide-zinc-800">
+                {#each catalogHits as hit (hit.id)}
+                  <tr class="transition-colors hover:bg-stone-50 dark:bg-zinc-900/70 dark:hover:bg-zinc-800/60">
+                    <td class="td font-medium text-zinc-900 dark:text-zinc-100">{hit.name}</td>
+                    <td class="td font-mono text-xs text-stone-600 dark:text-zinc-400">
+                      {hit.part_number ?? '—'}
+                    </td>
+                    <td class="td text-stone-600 dark:text-zinc-400">{hit.catalog_model_name}</td>
+                    <td class="td text-stone-600 dark:text-zinc-400">{hit.manufacturer}</td>
+                    <td class="td text-right">
+                      <button
+                        type="button"
+                        class="btn-primary px-2 py-1 text-xs"
+                        disabled={catalogLinking !== null}
+                        onclick={() => linkCatalogPart(hit)}
+                      >Link</button>
+                    </td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          </div>
+        {/if}
+      {/if}
     {/if}
   </div>
 

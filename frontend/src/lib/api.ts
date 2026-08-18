@@ -65,6 +65,22 @@ export interface CatalogPartView extends CatalogPart {
   owned_quantity: number | null;
 }
 
+/** A catalog part hit from `GET /api/catalog/parts?q=…`, joined with its model. */
+export interface CatalogPartSearchHit {
+  id: number;
+  catalog_model_id: number;
+  name: string;
+  part_number: string | null;
+  category: string | null;
+  notes: string | null;
+  diagram_x: number | null;
+  diagram_y: number | null;
+  catalog_model_name: string;
+  manufacturer: string;
+  /** The catalog model's category (the part's own `category` is free text). */
+  model_category: Category;
+}
+
 export interface CatalogModelDetail {
   model: CatalogModel;
   diagram_asset: string | null;
@@ -87,6 +103,8 @@ export interface Part {
   model_count?: number;
   /** '|' joined names of linked models, null when none. */
   model_names?: string | null;
+  /** Linked reference catalog part, when set. */
+  catalog_part_id?: number | null;
 }
 
 export interface ModelInput {
@@ -111,9 +129,22 @@ export interface PartInput {
   low_stock_enabled?: boolean;
 }
 
+/** The catalog part an inventory part is trace-linked to (part detail embed). */
+export interface PartCatalogLink {
+  catalog_part_id: number;
+  catalog_part_name: string;
+  part_number: string | null;
+  catalog_model_id: number;
+  catalog_model_name: string;
+  manufacturer: string;
+  model_category: Category;
+}
+
 export interface PartDetail {
   part: Part;
   models: Model[];
+  /** Set when the part is trace-linked to a reference catalog part. */
+  catalog?: PartCatalogLink | null;
 }
 
 /** One entry in the part-usage log (a repair, build, or swap). */
@@ -328,6 +359,19 @@ export const api = {
   unlinkModel(partId: number, modelId: number): Promise<void> {
     return request(`/parts/${partId}/models/${modelId}`, { method: 'DELETE' });
   },
+  /**
+   * Trace-link an existing inventory part to a reference catalog part.
+   * Returns the refreshed part detail (with the catalog summary embedded).
+   */
+  linkPartCatalog(partId: number, catalogPartId: number): Promise<PartDetail> {
+    return request(`/parts/${partId}/link-catalog`, {
+      method: 'POST',
+      body: JSON.stringify({ catalog_part_id: catalogPartId }),
+    });
+  },
+  unlinkPartCatalog(partId: number): Promise<void> {
+    return request(`/parts/${partId}/link-catalog`, { method: 'DELETE' });
+  },
 
   // Reference catalog
   listCatalogManufacturers(): Promise<CatalogManufacturer[]> {
@@ -365,6 +409,13 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ model_id: modelId, quantity }),
     });
+  },
+  /**
+   * Search catalog parts across all models (name / part number / notes,
+   * case-insensitive). Empty query lists the first 100 parts in name order.
+   */
+  searchCatalogParts(q?: string): Promise<CatalogPartSearchHit[]> {
+    return request(`/catalog/parts${qs({ q })}`);
   },
   /** Explicit admin deletion of a catalog part (orphan cleanup). */
   deleteCatalogPart(id: number): Promise<void> {

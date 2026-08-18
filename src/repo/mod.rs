@@ -6,8 +6,9 @@ pub mod sqlite;
 use crate::catalog::{CatalogFile, CatalogImportResult};
 use crate::error::DomainError;
 use crate::types::{
-    CatalogManufacturer, CatalogModel, CatalogPart, Category, Model, ModelInput, ModelListRow,
-    Part, PartBulkEdit, PartDetail, PartInput, PartListRow, PartSort, Settings, UsageRecord,
+    CatalogManufacturer, CatalogModel, CatalogPart, CatalogPartSearchHit, Category, Model,
+    ModelInput, ModelListRow, Part, PartBulkEdit, PartCatalogLink, PartDetail, PartInput,
+    PartListRow, PartSort, Settings, UsageRecord,
 };
 use async_trait::async_trait;
 
@@ -53,6 +54,13 @@ pub trait HangarRepo: Send + Sync {
     /// Part list rows for exactly these ids, in id order. Empty input
     /// yields an empty list.
     async fn list_parts_by_ids(&self, part_ids: &[i64]) -> Result<Vec<PartListRow>, DomainError>;
+    /// Sets (or clears, with `None`) the part's catalog trace link. Returns
+    /// the updated part; `None` when the part did not exist.
+    async fn set_part_catalog_link(
+        &self,
+        part_id: i64,
+        catalog_part_id: Option<i64>,
+    ) -> Result<Option<Part>, DomainError>;
 
     // -- Model <-> part association -----------------------------------------
 
@@ -168,6 +176,20 @@ pub trait HangarRepo: Send + Sync {
         &self,
         catalog_model_id: i64,
     ) -> Result<Vec<(i64, String)>, DomainError>;
+    /// Searches catalog parts across all models by name, part number, or
+    /// notes (case-insensitive substring). `None` query returns the first
+    /// `limit` parts in name order (browse mode).
+    async fn search_catalog_parts(
+        &self,
+        q: Option<&str>,
+        limit: i64,
+    ) -> Result<Vec<CatalogPartSearchHit>, DomainError>;
+    /// The part-detail catalog summary for a linked catalog part (joined
+    /// model + manufacturer); `None` when the catalog part no longer exists.
+    async fn get_catalog_part_link(
+        &self,
+        catalog_part_id: i64,
+    ) -> Result<Option<PartCatalogLink>, DomainError>;
     /// `(model id, model name, source_file)` for every catalog model — used
     /// at import time to warn about source files that no longer exist.
     async fn list_catalog_model_sources(&self) -> Result<Vec<(i64, String, String)>, DomainError>;
@@ -175,5 +197,9 @@ pub trait HangarRepo: Send + Sync {
 
 /// Convenience for tests and app wiring.
 pub fn detail_from_rows(part: Part, models: Vec<Model>) -> PartDetail {
-    PartDetail { part, models }
+    PartDetail {
+        part,
+        models,
+        catalog: None,
+    }
 }

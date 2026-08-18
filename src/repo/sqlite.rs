@@ -10,8 +10,9 @@ use super::HangarRepo;
 use crate::catalog::{CatalogFile, CatalogImportResult, ImportStatus};
 use crate::error::DomainError;
 use crate::types::{
-    like_pattern, CatalogManufacturer, CatalogModel, CatalogPart, Category, Model, ModelInput,
-    ModelListRow, Part, PartBulkEdit, PartInput, PartListRow, PartSort, Settings, UsageRecord,
+    like_pattern, CatalogManufacturer, CatalogModel, CatalogPart, CatalogPartSearchHit, Category,
+    Model, ModelInput, ModelListRow, Part, PartBulkEdit, PartCatalogLink, PartInput, PartListRow,
+    PartSort, Settings, UsageRecord,
 };
 
 pub struct SqliteRepo {
@@ -23,6 +24,18 @@ impl SqliteRepo {
         Self { pool }
     }
 }
+
+/// Shared projection joining a catalog part with its model and
+/// manufacturer (the part-detail link picker and the search endpoint
+/// render the same "model / part (manufacturer)" line).
+const CATALOG_PART_JOIN: &str = "SELECT cp.id, cp.catalog_model_id, cp.name, \
+         cp.part_number, cp.category, cp.notes, cp.diagram_x, cp.diagram_y, \
+         cm.name AS catalog_model_name, \
+         m.name AS manufacturer, \
+         cm.category AS model_category \
+         FROM catalog_parts cp \
+         JOIN catalog_models cm ON cm.id = cp.catalog_model_id \
+         JOIN catalog_manufacturers m ON m.id = cm.manufacturer_id";
 
 #[async_trait]
 impl HangarRepo for SqliteRepo {
@@ -214,6 +227,21 @@ impl HangarRepo for SqliteRepo {
         )
         .bind(delta)
         .bind(id)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(row)
+    }
+
+    async fn set_part_catalog_link(
+        &self,
+        part_id: i64,
+        catalog_part_id: Option<i64>,
+    ) -> Result<Option<Part>, DomainError> {
+        let row = query_as::<_, Part>(
+            "UPDATE parts SET catalog_part_id = ?1,               updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')              WHERE id = ?2 RETURNING *",
+        )
+        .bind(catalog_part_id)
+        .bind(part_id)
         .fetch_optional(&self.pool)
         .await?;
         Ok(row)
@@ -915,5 +943,34 @@ impl HangarRepo for SqliteRepo {
             .into_iter()
             .map(|r| (r.id, r.name, r.source_file))
             .collect())
+    }
+
+    async fn search_catalog_parts(
+        &self,
+        q: Option<&str>,
+        limit: i64,
+    ) -> Result<Vec<CatalogPartSearchHit>, DomainError> {
+        let pattern: Option<String> = q.map(like_pattern);
+        let rows = query_as::<_, CatalogPartSearchHit>(&format!(
+            "{}              WHERE (?1 IS NULL                     OR cp.name LIKE ?1 ESCAPE '\\'                     OR cp.part_number LIKE ?1 ESCAPE '\\'                     OR cp.notes LIKE ?1 ESCAPE '\\')              ORDER BY cp.name COLLATE NOCASE ASC, cp.id ASC              LIMIT ?2",
+            CATALOG_PART_JOIN
+        ))
+        .bind(pattern)
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows)
+    }
+
+    async fn get_catalog_part_link(
+        &self,
+        catalog_part_id: i64,
+    ) -> Result<Option<PartCatalogLink>, DomainError> {
+        let row =
+            query_as::<_, PartCatalogLink>(&format!("{} WHERE cp.id = ?1", CATALOG_PART_JOIN))
+                .bind(catalog_part_id)
+                .fetch_optional(&self.pool)
+                .await?;
+        Ok(row)
     }
 }

@@ -5,7 +5,7 @@ import type { CatalogPartView } from './api';
  * viewer can look one up by file name — including future per-model overrides
  * named in a catalog file — with no extra network request.
  */
-const diagrams = import.meta.glob('../lib/diagrams/*.svg', {
+const diagrams = import.meta.glob('./diagrams/*.svg', {
   query: '?raw',
   import: 'default',
   eager: true,
@@ -18,10 +18,10 @@ const diagrams = import.meta.glob('../lib/diagrams/*.svg', {
  */
 export function diagramSvg(asset: string | null, category: string): string | null {
   const name =
-    asset !== null && diagrams[`../lib/diagrams/${asset}`] !== undefined
+    asset !== null && diagrams[`./diagrams/${asset}`] !== undefined
       ? asset
       : `${category}-generic.svg`;
-  return diagrams[`../lib/diagrams/${name}`] ?? null;
+  return diagrams[`./diagrams/${name}`] ?? null;
 }
 
 /**

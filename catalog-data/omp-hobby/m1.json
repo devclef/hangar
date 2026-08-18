@@ -2,55 +2,441 @@
   "manufacturer": "OMP Hobby",
   "model": "M1",
   "category": "heli",
-  "diagram_asset": "heli-generic.svg",
+  "diagram_asset": "omp-m1.svg",
   "parts": [
     {
-      "name": "Main blade grip set",
-      "part_number": null,
-      "category": "Blade grip",
-      "notes": "placeholder — part number pending verification",
-      "diagram_x": 37.0,
-      "diagram_y": 18.0
-    },
-    {
-      "name": "Feathering shaft",
-      "part_number": null,
-      "category": "Main shaft",
-      "notes": "placeholder — part number pending verification",
-      "diagram_x": 35.5,
-      "diagram_y": 30.0
-    },
-    {
-      "name": "Main shaft",
-      "part_number": null,
-      "category": "Main shaft",
-      "notes": "placeholder — part number pending verification",
+      "name": "Metal main rotor housing set",
+      "part_number": "OSHM1001",
+      "category": "Main rotor",
+      "notes": "CN: 主轴中心座组",
       "diagram_x": 32.0,
-      "diagram_y": 42.0
+      "diagram_y": 34.0
     },
     {
-      "name": "Tail boom",
-      "part_number": null,
-      "category": "Tail boom",
-      "notes": "placeholder — part number pending verification",
-      "diagram_x": 64.0,
-      "diagram_y": 38.0
+      "name": "Feathering shaft set",
+      "part_number": "OSHM1002",
+      "category": "Main rotor",
+      "notes": "CN: 横轴组 (cross shaft through the main rotor housing)",
+      "diagram_x": 23.8,
+      "diagram_y": 34.0
     },
     {
-      "name": "Tail rotor blade set",
-      "part_number": null,
+      "name": "Plastic main rotor holder set",
+      "part_number": "OSHM1003",
+      "category": "Main rotor",
+      "notes": "CN: 主夹头组",
+      "diagram_x": 32.0,
+      "diagram_y": 17.5
+    },
+    {
+      "name": "Main rotor holder screw group",
+      "part_number": "OSHM1004",
+      "category": "Main rotor",
+      "notes": "CN: 主桨夹螺丝组",
+      "diagram_x": 27.5,
+      "diagram_y": 17.5
+    },
+    {
+      "name": "Cross shaft suspension set",
+      "part_number": "OSHM1005",
+      "category": "Main rotor",
+      "notes": "CN: 横轴避震套组. Manual EN label 'Gross Shaft Suspension Set' is a mistranslation",
+      "diagram_x": 38.5,
+      "diagram_y": 34.0
+    },
+    {
+      "name": "Servo mount set",
+      "part_number": "OSHM1006",
+      "category": "Servo",
+      "notes": "CN: 舵机固定座组"
+    },
+    {
+      "name": "Main motor mount set (charm orange)",
+      "part_number": "OSHM1007",
+      "category": "Motor & mount",
+      "notes": "CN: 主电机固定座组--橙色",
+      "diagram_x": 29.0,
+      "diagram_y": 48.7
+    },
+    {
+      "name": "Main shaft fixed ring set",
+      "part_number": "OSHM1008",
+      "category": "Main rotor",
+      "notes": "CN: 主轴固定环组. Manual EN label duplicates OSHM1001's 'Metal Main Rotor Housing set'",
+      "diagram_x": 35.2,
+      "diagram_y": 38.3
+    },
+    {
+      "name": "Main pitch control arm set (FBL)",
+      "part_number": "OSHM1009",
+      "category": "Main rotor",
+      "notes": "CN: 主螺距控制臂组. Manual EN label garbled ('FBL Pros and Cons linkage rod')",
+      "diagram_x": 27.0,
+      "diagram_y": 28.0
+    },
+    {
+      "name": "Copper set of main pitch control arm",
+      "part_number": "OSHM1010",
+      "category": "Main rotor",
+      "notes": "CN: 主螺距控制臂铜套组",
+      "diagram_x": 37.2,
+      "diagram_y": 28.0
+    },
+    {
+      "name": "Main pitch control arm screw set",
+      "part_number": "OSHM1011",
+      "category": "Main rotor",
+      "notes": "CN: 主旋翼头螺丝组 (manual CN label differs from EN)",
+      "diagram_x": 35.8,
+      "diagram_y": 22.7
+    },
+    {
+      "name": "Swash plate set",
+      "part_number": "OSHM1012",
+      "category": "Main rotor",
+      "notes": "CN: 倾斜盘组",
+      "diagram_x": 32.0,
+      "diagram_y": 28.0
+    },
+    {
+      "name": "Servo set (plastic housing, metal gear)",
+      "part_number": "OSHM1013",
+      "category": "Servo",
+      "notes": "CN: 舵机组--（塑胶外壳+全金属齿轮）",
+      "diagram_x": 28.5,
+      "diagram_y": 42.7
+    },
+    {
+      "name": "Servo linkage rod set",
+      "part_number": "OSHM1014",
+      "category": "Servo",
+      "notes": "CN: 舵机连杆组"
+    },
+    {
+      "name": "Tail blade set (black)",
+      "part_number": "OSHM1015",
       "category": "Tail rotor",
-      "notes": "placeholder — part number pending verification",
-      "diagram_x": 87.0,
+      "notes": "CN: 尾螺旋桨组-黑色",
+      "diagram_x": 88.0,
+      "diagram_y": 23.7
+    },
+    {
+      "name": "Vertical rotor set (tail fin)",
+      "part_number": "OSHM1016",
+      "category": "Tail rotor",
+      "notes": "CN: 垂直翼组",
+      "diagram_x": 84.8,
+      "diagram_y": 38.3
+    },
+    {
+      "name": "Tail boom set",
+      "part_number": "OSHM1017",
+      "category": "Tail boom",
+      "notes": "CN: 尾管组",
+      "diagram_x": 60.0,
+      "diagram_y": 39.3
+    },
+    {
+      "name": "Body side panel set",
+      "part_number": "OSHM1018",
+      "category": "Body & canopy",
+      "notes": "CN: 机身侧板组",
+      "diagram_x": 50.0,
+      "diagram_y": 39.3
+    },
+    {
+      "name": "Swash plate phase panel set",
+      "part_number": "OSHM1019",
+      "category": "Main rotor",
+      "notes": "CN: 倾斜盘相位板组. Manual EN label 'Croduct Phase Panel Set' (typo)",
+      "diagram_x": 29.0,
+      "diagram_y": 22.7
+    },
+    {
+      "name": "Canopy fixed bolt set",
+      "part_number": "OSHM1020",
+      "category": "Body & canopy",
+      "notes": "CN: 机头罩固定柱组",
+      "diagram_x": 27.0,
+      "diagram_y": 35.8
+    },
+    {
+      "name": "Bearing set (682ZZ)",
+      "part_number": "OSHM1021",
+      "category": "Hardware",
+      "notes": "CN: 滚珠轴承组-682zz"
+    },
+    {
+      "name": "Main chuck gasket set",
+      "part_number": "OSHM1022",
+      "category": "Main rotor",
+      "notes": "CN: 主夹头垫片组",
+      "diagram_x": 37.0,
+      "diagram_y": 17.0
+    },
+    {
+      "name": "Screw kit set",
+      "part_number": "OSHM1023",
+      "category": "Hardware",
+      "notes": "CN: 螺丝包组. Assorted M1.4/M1.6 screws: M1.6x3, M1.6x4, M1.6x5, M1.4x6-L2, M1.4x8-L3, M1.6x9-L3, ST1.4x4"
+    },
+    {
+      "name": "Lithium battery set",
+      "part_number": "OSHM1024",
+      "category": "Battery",
+      "notes": "CN: 锂电池组",
+      "diagram_x": 42.5,
+      "diagram_y": 44.2
+    },
+    {
+      "name": "Flight control",
+      "part_number": "OSHM1025",
+      "category": "Electronics",
+      "notes": "CN: 飞控",
+      "diagram_x": 18.0,
+      "diagram_y": 48.0
+    },
+    {
+      "name": "Main motor set (charm orange)",
+      "part_number": "OSHM1026",
+      "category": "Motor & mount",
+      "notes": "CN: 主电机组-(魔力橙)",
+      "diagram_x": 29.0,
+      "diagram_y": 54.3
+    },
+    {
+      "name": "Main motor set (purple)",
+      "part_number": "OSHM1027",
+      "category": "Motor & mount",
+      "notes": "CN: 主电机组-(紫色)",
+      "diagram_x": 33.0,
+      "diagram_y": 54.3
+    },
+    {
+      "name": "Main motor set (racing yellow)",
+      "part_number": "OSHM1028",
+      "category": "Motor & mount",
+      "notes": "CN: 主电机组-(竞速黄)",
+      "diagram_x": 37.0,
+      "diagram_y": 54.3
+    },
+    {
+      "name": "Tail motor set (charm orange)",
+      "part_number": "OSHM1029",
+      "category": "Motor & mount",
+      "notes": "CN column mislabels 主电机组; EN 'Tail Motor Set' + ordering confirm tail motor",
+      "diagram_x": 84.5,
+      "diagram_y": 45.0
+    },
+    {
+      "name": "Tail motor set (purple)",
+      "part_number": "OSHM1030",
+      "category": "Motor & mount",
+      "notes": "CN column mislabels 主电机组; EN 'Tail Motor Set' + ordering confirm tail motor",
+      "diagram_x": 88.0,
+      "diagram_y": 47.5
+    },
+    {
+      "name": "Tail motor set (racing yellow)",
+      "part_number": "OSHM1031",
+      "category": "Motor & mount",
+      "notes": "CN column mislabels 主电机组; EN 'Tail Motor Set' + ordering confirm tail motor",
+      "diagram_x": 91.5,
+      "diagram_y": 45.0
+    },
+    {
+      "name": "125mm main blades (charm orange, hard)",
+      "part_number": "OSHM1032",
+      "category": "Main rotor",
+      "notes": "CN: 125 主旋翼组-(魔力橙) 暴力",
+      "diagram_x": 12.0,
+      "diagram_y": 11.7
+    },
+    {
+      "name": "125mm main blades (purple, hard)",
+      "part_number": "OSHM1033",
+      "category": "Main rotor",
+      "notes": "CN: 125 主旋翼组-(紫色) 暴力",
+      "diagram_x": 18.0,
+      "diagram_y": 11.7
+    },
+    {
+      "name": "125mm main blades (racing yellow, hard)",
+      "part_number": "OSHM1034",
+      "category": "Main rotor",
+      "notes": "CN: 125 主旋翼组-(竞速黄) 暴力",
+      "diagram_x": 24.0,
+      "diagram_y": 11.7
+    },
+    {
+      "name": "125mm main blades (charm orange, soft)",
+      "part_number": "OSHM1035",
+      "category": "Main rotor",
+      "notes": "CN: 125 主旋翼组-(魔力橙) 柔和",
+      "diagram_x": 40.0,
+      "diagram_y": 11.7
+    },
+    {
+      "name": "125mm main blades (purple, soft)",
+      "part_number": "OSHM1036",
+      "category": "Main rotor",
+      "notes": "CN: 125 主旋翼组-(紫色) 柔和",
+      "diagram_x": 46.0,
+      "diagram_y": 11.7
+    },
+    {
+      "name": "125mm main blades (racing yellow, soft)",
+      "part_number": "OSHM1037",
+      "category": "Main rotor",
+      "notes": "CN: 125 主旋翼组-(竞速黄) 柔和",
+      "diagram_x": 52.0,
+      "diagram_y": 11.7
+    },
+    {
+      "name": "Canopy set (charm orange)",
+      "part_number": "OSHM1038",
+      "category": "Body & canopy",
+      "notes": "CN: 机头罩--魔力橙",
+      "diagram_x": 13.8,
+      "diagram_y": 39.2
+    },
+    {
+      "name": "Canopy set (purple)",
+      "part_number": "OSHM1039",
+      "category": "Body & canopy",
+      "notes": "CN: 机头罩--紫色",
+      "diagram_x": 16.8,
+      "diagram_y": 36.0
+    },
+    {
+      "name": "Canopy set (racing yellow)",
+      "part_number": "OSHM1040",
+      "category": "Body & canopy",
+      "notes": "CN: 机头罩--竞速黄",
+      "diagram_x": 20.0,
       "diagram_y": 33.0
     },
     {
-      "name": "Canopy",
-      "part_number": null,
-      "category": "Body",
-      "notes": "placeholder — part number pending verification",
+      "name": "Landing skids set (charm orange)",
+      "part_number": "OSHM1041",
+      "category": "Body & canopy",
+      "notes": "CN: 脚架组-(魔力橙)",
       "diagram_x": 22.0,
-      "diagram_y": 33.0
+      "diagram_y": 62.5
+    },
+    {
+      "name": "Landing skids set (purple)",
+      "part_number": "OSHM1042",
+      "category": "Body & canopy",
+      "notes": "CN: 脚架组-(紫色)",
+      "diagram_x": 34.0,
+      "diagram_y": 62.5
+    },
+    {
+      "name": "Landing skids set (racing yellow)",
+      "part_number": "OSHM1043",
+      "category": "Body & canopy",
+      "notes": "CN: 脚架组-(竞速黄)",
+      "diagram_x": 46.0,
+      "diagram_y": 62.5
+    },
+    {
+      "name": "Servo set (metal housing, metal gear)",
+      "part_number": "OSHM1044",
+      "category": "Servo",
+      "notes": "CN: 舵机组--（全金属外壳+全金属齿轮）",
+      "diagram_x": 38.5,
+      "diagram_y": 41.7
+    },
+    {
+      "name": "Main motor mount set (racing yellow)",
+      "part_number": "OSHM1045",
+      "category": "Motor & mount",
+      "notes": "CN: 主电机固定座组--竞速黄",
+      "diagram_x": 33.0,
+      "diagram_y": 48.7
+    },
+    {
+      "name": "Main motor mount set (purple)",
+      "part_number": "OSHM1046",
+      "category": "Motor & mount",
+      "notes": "CN: 主电机固定座组--紫色",
+      "diagram_x": 37.0,
+      "diagram_y": 48.7
+    },
+    {
+      "name": "Receiver board (Futaba S-BUS, high frequency)",
+      "part_number": "OSHM1047",
+      "category": "Electronics",
+      "notes": "Manual EN label blank ('???????'); CN: 接收板--内置FUTABA：S-BUS高频",
+      "diagram_x": 22.0,
+      "diagram_y": 40.0
+    },
+    {
+      "name": "Receiver board (standard version)",
+      "part_number": "OSHM1048",
+      "category": "Electronics",
+      "notes": "Manual EN label blank; CN: 接收板--常规版本",
+      "diagram_x": 25.0,
+      "diagram_y": 45.0
+    },
+    {
+      "name": "ESC-10A",
+      "part_number": "OSHM1049",
+      "category": "Electronics",
+      "notes": "CN: 电调板-10A (10A electronic speed control)",
+      "diagram_x": 14.5,
+      "diagram_y": 46.3
+    },
+    {
+      "name": "Hexagon screwdriver (1.0mm)",
+      "part_number": "OSHM1050",
+      "category": "Tools",
+      "notes": "CN: 1.0六角螺丝刀"
+    },
+    {
+      "name": "Slotted screwdriver (0.3mm)",
+      "part_number": "OSHM1051",
+      "category": "Tools",
+      "notes": "CN: 0.3一字螺丝刀"
+    },
+    {
+      "name": "Main wing support frame",
+      "part_number": "OSHM1052",
+      "category": "Main rotor",
+      "notes": "CN: 主翼支撑架"
+    },
+    {
+      "name": "Ø4 main shaft set",
+      "part_number": "OSHM1053",
+      "category": "Main rotor",
+      "notes": "CN: 主轴组. Manual EN label misprints Ø as ɸ",
+      "diagram_x": 32.0,
+      "diagram_y": 42.7
+    },
+    {
+      "name": "Tail blade set (charm orange)",
+      "part_number": "OSHM1054",
+      "category": "Tail rotor",
+      "notes": "CN: 尾螺旋桨组-(魔力橙)",
+      "diagram_x": 92.8,
+      "diagram_y": 32.5
+    },
+    {
+      "name": "Tail blade set (purple)",
+      "part_number": "OSHM1055",
+      "category": "Tail rotor",
+      "notes": "CN: 尾螺旋桨组-(紫色)",
+      "diagram_x": 88.0,
+      "diagram_y": 41.3
+    },
+    {
+      "name": "Tail blade set (racing yellow)",
+      "part_number": "OSHM1056",
+      "category": "Tail rotor",
+      "notes": "CN: 尾螺旋桨组-(竞速黄)",
+      "diagram_x": 83.2,
+      "diagram_y": 32.5
     }
   ]
 }

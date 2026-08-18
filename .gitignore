@@ -11,3 +11,6 @@ data/*.db-*
 
 # Misc
 .env
+
+# Local scratch files
+local/

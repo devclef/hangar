@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 60" width="100%" height="100%"
+     fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"
+     preserveAspectRatio="xMidYMid meet">
+  <!-- OMP Hobby M1 micro helicopter, side view, nose left -->
+
+  <!-- Main rotor blades: left segment = hard set, right segment = soft set -->
+  <line x1="8" y1="7" x2="29.5" y2="7" stroke-width="1.8"/>
+  <line x1="34.5" y1="7" x2="56" y2="7" stroke-width="1.8"/>
+
+  <!-- Main rotor holder hub -->
+  <line x1="32" y1="7" x2="32" y2="8.8"/>
+  <circle cx="32" cy="10.5" r="1.7"/>
+
+  <!-- Swash plate phase panel + swash plate -->
+  <line x1="32" y1="12.2" x2="32" y2="12.9"/>
+  <rect x="28.6" y="12.9" width="6.8" height="1.5" rx="0.7"/>
+  <line x1="32" y1="14.4" x2="32" y2="15.3"/>
+  <circle cx="32" cy="16.8" r="1.5"/>
+
+  <!-- Cross (feathering) shaft through the main rotor housing -->
+  <line x1="23.5" y1="20.4" x2="39.5" y2="20.4" opacity="0.6"/>
+  <!-- Main rotor housing -->
+  <circle cx="32" cy="20.4" r="3.2"/>
+
+  <!-- Main shaft down to the motor pod -->
+  <line x1="32" y1="23.6" x2="32" y2="28.8"/>
+
+  <!-- Main motor pod (mounts + motor) -->
+  <rect x="27" y="28.8" width="12" height="5.2" rx="1.2"/>
+
+  <!-- Canopy / nose -->
+  <path d="M 12.5 28 C 12.5 23 15 20.3 20 20 L 27 20.3 L 27 28.2 C 22 29.6 16 29.6 12.5 28 Z"/>
+  <!-- Canopy glass line -->
+  <path d="M 15.5 24.5 C 16.5 22.3 18.5 21.2 21 20.8" opacity="0.4"/>
+
+  <!-- Battery block behind the nose -->
+  <rect x="39.5" y="25.2" width="5.5" height="2.6" rx="0.6"/>
+
+  <!-- Body side panel / tail boom -->
+  <line x1="27" y1="23" x2="86" y2="23.6" stroke-width="2.4"/>
+
+  <!-- Tail fin + tail rotor -->
+  <path d="M 83.8 23.6 L 86 13.5 L 88.2 23.6"/>
+  <circle cx="88" cy="19.5" r="5"/>
+  <line x1="88" y1="14.5" x2="88" y2="24.5" opacity="0.5"/>
+  <line x1="83" y1="19.5" x2="93" y2="19.5" opacity="0.5"/>
+  <circle cx="88" cy="19.5" r="1.5"/>
+
+  <!-- Landing skids -->
+  <line x1="16" y1="37.5" x2="52" y2="37.5" stroke-width="1.8"/>
+  <line x1="20.5" y1="29.8" x2="18.5" y2="37.5"/>
+  <line x1="46" y1="25.5" x2="47.5" y2="37.5"/>
+
+  <!-- Zone labels -->
+  <g fill="currentColor" stroke="none" font-family="ui-sans-serif, system-ui, sans-serif" opacity="0.55">
+    <text x="32" y="4.2" font-size="2.6" text-anchor="middle">main rotor</text>
+    <text x="67" y="21.6" font-size="2.6" text-anchor="middle">tail boom</text>
+    <text x="88" y="33.5" font-size="2.6" text-anchor="middle">tail rotor</text>
+    <text x="33" y="36.6" font-size="2.6" text-anchor="middle">motor pod</text>
+    <text x="29" y="41" font-size="2.6" text-anchor="middle">skids</text>
+  </g>
+</svg>
